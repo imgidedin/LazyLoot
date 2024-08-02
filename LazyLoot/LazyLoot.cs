@@ -1,5 +1,4 @@
-﻿using Dalamud.Game;
-using Dalamud.Game.ClientState.Conditions;
+﻿using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Command;
 using Dalamud.Game.Gui.Dtr;
 using Dalamud.Game.Text;
@@ -10,7 +9,6 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using ECommons;
 using ECommons.DalamudServices;
-using ECommons.ImGuiMethods;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using Lumina.Excel.GeneratedSheets;
 using PunishLib;
@@ -33,10 +31,10 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 
     internal static Configuration Config;
     internal static ConfigUi ConfigUi;
-    internal static DtrBarEntry DtrEntry;
+    internal static IDtrBarEntry DtrEntry;
 
     internal static LazyLoot P;
-    public LazyLoot(DalamudPluginInterface pluginInterface)
+    public LazyLoot(IDalamudPluginInterface pluginInterface)
     {
         ECommonsMain.Init(pluginInterface, this);
         PunishLibMain.Init(pluginInterface, "LazyLoot", new AboutPlugin() { Developer = "53m1k0l0n/Gidedin" });
@@ -45,9 +43,17 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         Config = Svc.PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         ConfigUi = new ConfigUi();
         DtrEntry ??= Svc.DtrBar.Get("LazyLoot");
+        DtrEntry.OnClick = new(() => CycleFulf());
+
 
         Svc.PluginInterface.UiBuilder.OpenConfigUi += OnOpenConfigUi;
         Svc.Chat.CheckMessageHandled += NoticeLoot;
+
+        Svc.Commands.AddHandler("/lazyloot", new CommandInfo(LazyCommand)
+        {
+            HelpMessage = "Open Lazy Loot config.",
+            ShowInHelp = true,
+        });
 
         Svc.Commands.AddHandler("/lazy", new CommandInfo(LazyCommand)
         {
@@ -79,6 +85,30 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         }
     }
 
+    private void CycleFulf()
+    {
+        if (!Config.FulfEnabled)
+        {
+            Config.FulfEnabled = true;
+            Config.FulfRoll = 2;
+        }
+        else
+        {
+            Config.FulfRoll = Config.FulfRoll switch
+            {
+                0 => 2,
+                1 => 0,
+                2 => 1,
+                _ => throw new ArgumentOutOfRangeException(nameof(Config.FulfRoll)),
+            };
+
+            if (Config.FulfRoll == 2)
+                Config.FulfEnabled = false;
+        }
+
+        Config.Save();
+    }
+
     public void Dispose()
     {
         Dispose(true);
@@ -93,12 +123,13 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         Svc.PluginInterface.UiBuilder.OpenConfigUi -= OnOpenConfigUi;
         Svc.Chat.CheckMessageHandled -= NoticeLoot;
 
+        Svc.Commands.RemoveHandler("/lazyloot");
         Svc.Commands.RemoveHandler("/lazy");
         Svc.Commands.RemoveHandler("/fulf");
 
         ECommonsMain.Dispose();
         PunishLibMain.Dispose();
-        PluginLog.Information(">>Stop LazyLoot<<");
+        Svc.Log.Information(">>Stop LazyLoot<<");
         DtrEntry.Remove();
 
         Svc.Framework.Update -= OnFrameworkUpdate;
@@ -153,23 +184,26 @@ public class LazyLoot : IDalamudPlugin, IDisposable
     {
         if (Config.FulfEnabled)
         {
-            string fulfMode = _rollArray[Config.FulfRoll % 3] switch
+            string fulfMode = Config.FulfRoll switch
             {
-                RollResult.Needed => "Needing",
-                RollResult.Greeded => "Greeding",
-                RollResult.Passed => "Passing"
+                0 => "Needing",
+                1 => "Greeding",
+                2 => "Passing"
             };
 
             DtrEntry.Text = new SeString(
                 new IconPayload(BitmapFontIcon.Dice),
-                new TextPayload(fulfMode)
-                );
-            DtrEntry.Shown = true;
+                new TextPayload(fulfMode));
+
         }
         else
         {
-            DtrEntry.Shown = false;
+            DtrEntry.Text = new SeString(
+            new IconPayload(BitmapFontIcon.Dice),
+            new TextPayload("FULF Disabled"));
         }
+
+        DtrEntry.Shown = true;
 
         //Not sure why the below line is here? You can only roll on loot in duties anyway, plus it helps when SE changes which flag a duty has (such as Keeper of the Lake using BoundByDuty56)
         //if (!Svc.Condition[ConditionFlag.BoundByDuty]) return;
@@ -203,7 +237,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         }
         catch (Exception ex)
         {
-            PluginLog.Error(ex, "Something Wrong with rolling!");
+            Svc.Log.Error(ex, "Something Wrong with rolling!");
         }
     }
 
@@ -244,7 +278,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         }
     }
 
-    private void NoticeLoot(XivChatType type, uint senderId, ref SeString sender, ref SeString message, ref bool isHandled)
+    private void NoticeLoot(XivChatType type, int senderId, ref SeString sender, ref SeString message, ref bool isHandled)
     {
         if (!Config.FulfEnabled || type != (XivChatType)2105) return;
 
@@ -255,7 +289,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
                 .Next((int)(Config.FulfMinRollDelayInSeconds * 1000),
                 (int)(Config.FulfMaxRollDelayInSeconds * 1000)));
 
-            _rollOption = _rollArray[Config.FulfRoll % 3];
+            _rollOption = _rollArray[Config.FulfRoll];
         }
     }
 }
