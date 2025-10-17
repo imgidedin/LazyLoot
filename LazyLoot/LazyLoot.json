@@ -14,5 +14,5 @@
   "ImageUrls": null,
   "IconUrl": "https://love.puni.sh/resources/lazyloot.png",
   "DalamudAPILevel": 13,
-  "ChangeLog": "- Patch update."
+  "ChangeLog": "- Fulf command toggle now works as intended."
 }

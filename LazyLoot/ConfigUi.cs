@@ -1,27 +1,28 @@
-using System;
-using System.Collections.Generic;
-using System.Drawing;
-using System.Linq;
-using System.Numerics;
-using System.Runtime.InteropServices;
-using Dalamud;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Colors;
 using Dalamud.Interface.Components;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Windowing;
+using ECommons;
 using ECommons.DalamudServices;
 using ECommons.ImGuiMethods;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
-using Dalamud.Bindings.ImGui;
+using Lumina.Excel;
 using Lumina.Excel.Sheets;
 using PunishLib.ImGuiMethods;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using System.Runtime.InteropServices;
+using System.Text.Json;
 
 namespace LazyLoot;
 
 public class ConfigUi : Window, IDisposable
 {
-    private static string clipboardText;
+    private static List<CustomRestriction> importedRestrictions;
     private static int debugValue;
     private static string searchResultsQuery;
     private static double lastSearchTime;
@@ -97,13 +98,13 @@ public class ConfigUi : Window, IDisposable
                 ImGui.EndTabItem();
             }
 
-            #if DEBUG
+#if DEBUG
             if (ImGui.BeginTabItem("Debug"))
             {
                 DrawDebug();
                 ImGui.EndTabItem();
             }
-            #endif
+#endif
 
             ImGui.EndTabBar();
         }
@@ -360,7 +361,7 @@ public class ConfigUi : Window, IDisposable
                 ImGui.Text(restrictedItem.Name.ToString());
                 if (ImGui.IsItemHovered())
                     ImGui.SetTooltip(restrictedItem.Name.ToString());
-                
+
                 ImGui.TableNextColumn();
                 CenterText();
                 if (ImGui.RadioButton($"##need{item.Id}", item.RollRule == RollResult.Needed))
@@ -418,18 +419,15 @@ public class ConfigUi : Window, IDisposable
         {
             try
             {
-                clipboardText = ImGui.GetClipboardText();
-                if (string.IsNullOrEmpty(clipboardText))
+                bool userImported = ImportFromClipboard("import_item_confirmation");
+                if (!userImported)
                 {
-                    Notify.Error("Nothing to import on your clipboard");
-                    return;
+                    Notify.Error("Failed to import item restriction settings - invalid format");
                 }
-
-                ImGui.OpenPopup("import_item_confirmation");
             }
-            catch
+            catch (Exception e)
             {
-                Notify.Error("Failed to import item restriction settings - invalid format");
+                e.Log();
             }
         }
 
@@ -446,15 +444,19 @@ public class ConfigUi : Window, IDisposable
 
         if (ImGui.BeginPopup("import_item_confirmation", ImGuiWindowFlags.AlwaysAutoResize))
         {
+            bool validation = ValidateImport(itemSheet);
+            if (!validation)
+            {
+                ImGui.CloseCurrentPopup();
+            }
             ImGui.Text("Are you sure you want to replace your current item restrictions configuration?");
             ImGuiEx.LineCentered(() => ImGuiEx.TextUnderlined("This action cannot be undone."));
             ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(40 / 255f, 167 / 255f, 69 / 255f, 1.0f));
             if (ImGui.Button("YES", new Vector2(100f, 0)))
             {
-                var items = System.Text.Json.JsonSerializer.Deserialize<List<CustomRestriction>>(clipboardText);
-                if (items != null)
+                if (importedRestrictions != null)
                 {
-                    LazyLoot.Config.Restrictions.Items = items;
+                    LazyLoot.Config.Restrictions.Items = importedRestrictions;
                     LazyLoot.Config.Save();
                     Notify.Success("Imported Item Restrictions successfully!");
                 }
@@ -528,6 +530,50 @@ public class ConfigUi : Window, IDisposable
 
             ImGui.EndPopup();
         }
+    }
+
+    private static bool ValidateImport<T>(ExcelSheet<T> sheet) where T : struct, IExcelRow<T>
+    {
+        bool bail = false;
+        foreach (var item in importedRestrictions)
+        {
+            if (sheet.Any(x => x.RowId == item.Id)) continue;
+            bail = true;
+            Notify.Error($"Imported restriction contains invalid item ID: {item.Id}. Import cancelled.");
+        }
+        if (bail)
+        {
+            ImGui.CloseCurrentPopup();
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool ImportFromClipboard(string popupname)
+    {
+        var clipboardText = ImGui.GetClipboardText();
+        if (string.IsNullOrEmpty(clipboardText))
+        {
+            Notify.Error("Nothing to import on your clipboard");
+            return false;
+        }
+        try
+        {
+            var result = JsonSerializer.Deserialize<List<CustomRestriction>>(clipboardText);
+            if (result != null)
+            {
+                importedRestrictions = result;
+                ImGui.OpenPopup(popupname);
+            }
+        }
+        catch (Exception e)
+        {
+            e.Log();
+            return false;
+        }
+
+        return true;
     }
 
     private static void DrawUserRestrictionDuties()
@@ -641,18 +687,15 @@ public class ConfigUi : Window, IDisposable
         {
             try
             {
-                clipboardText = ImGui.GetClipboardText();
-                if (string.IsNullOrEmpty(clipboardText))
+                bool userImported = ImportFromClipboard("import_duty_confirmation");
+                if (!userImported)
                 {
-                    Notify.Error("Nothing to import on your clipboard");
-                    return;
+                    Notify.Error("Failed to import duty restriction settings - invalid format");
                 }
-
-                ImGui.OpenPopup("import_duty_confirmation");
             }
-            catch
+            catch (Exception e)
             {
-                Notify.Error("Failed to import duty restriction settings - invalid format");
+                e.Log();
             }
         }
 
@@ -669,15 +712,19 @@ public class ConfigUi : Window, IDisposable
 
         if (ImGui.BeginPopup("import_duty_confirmation", ImGuiWindowFlags.AlwaysAutoResize))
         {
+            bool validation = ValidateImport(dutySheet);
+            if (!validation)
+            {
+                ImGui.CloseCurrentPopup();
+            }
             ImGui.Text("Are you sure you want to replace your current duty restrictions configuration?");
             ImGuiEx.LineCentered(() => ImGuiEx.TextUnderlined("This action cannot be undone."));
             ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(40 / 255f, 167 / 255f, 69 / 255f, 1.0f));
             if (ImGui.Button("YES", new Vector2(100f, 0)))
             {
-                var duties = System.Text.Json.JsonSerializer.Deserialize<List<CustomRestriction>>(clipboardText);
-                if (duties != null)
+                if (importedRestrictions != null)
                 {
-                    LazyLoot.Config.Restrictions.Duties = duties;
+                    LazyLoot.Config.Restrictions.Duties = importedRestrictions;
                     LazyLoot.Config.Save();
                     Notify.Success("Imported Duty Restrictions successfully!");
                 }
@@ -696,6 +743,7 @@ public class ConfigUi : Window, IDisposable
             ImGui.PopStyleColor();
             ImGui.EndPopup();
         }
+
 
         if (ImGui.BeginPopup("duty_search_add"))
         {
