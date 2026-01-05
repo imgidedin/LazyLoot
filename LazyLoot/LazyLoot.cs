@@ -14,6 +14,7 @@ using PunishLib;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using ECommons.Logging;
 
 namespace LazyLoot;
 
@@ -92,13 +93,18 @@ public class LazyLoot : IDalamudPlugin, IDisposable
     private void LazyCommand(string command, string arguments)
     {
         var args = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (args.Length == 0)
+
+        switch (args.Length)
         {
-            OnOpenConfigUi();
-        }
-        else
-        {
-            RollingCommand(null!, arguments);
+            case 0:
+                OnOpenConfigUi();
+                return;
+            case >= 2 when args[0].Equals("test", StringComparison.OrdinalIgnoreCase):
+                TestWhatWouldLLDo(args[1]);
+                return;
+            default:
+                RollingCommand(null!, arguments);
+                break;
         }
     }
 
@@ -331,4 +337,26 @@ public class LazyLoot : IDalamudPlugin, IDisposable
             _rollOption = _rollArray[Config.FulfRoll];
         }
     }
+    
+    private static void TestWhatWouldLLDo(string idArg)
+    {
+        if (!uint.TryParse(idArg, out var itemId) || itemId == 0)
+        {
+            DuoLog.Error($"Invalid item id: '{idArg}'. Usage: /lazy test <itemId>");
+            return;
+        }
+        var item = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId);
+        var itemName = item?.Name.ToString() ?? "<unknown item>";
+        var decision = Roller.WhatWouldLlDo(itemId);
+        var decisionText = decision switch
+        {
+            Roller.LlDecision.DoNothing => "DO NOTHING",
+            Roller.LlDecision.Pass => "PASS",
+            Roller.LlDecision.Greed => "GREED",
+            Roller.LlDecision.Need => "NEED",
+            _ => $"UNKNOWN ({decision})"
+        };
+        DuoLog.Debug($"[LL Test] {itemName} (ID {itemId}) -> {decisionText}.");
+    }
+    
 }

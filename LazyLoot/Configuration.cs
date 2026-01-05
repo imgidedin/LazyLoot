@@ -73,6 +73,8 @@ namespace LazyLoot
         // Loot by Seal Worth
         public bool RestrictionSeals = false;
         public int RestrictionSealsAmnt = 1;
+        // Never pass on glamour items (Items that has a level and ilevel of 1)
+        public bool NeverPassGlam = true;
 
         //Diagnostics
         public bool DiagnosticsMode = false;

@@ -143,21 +143,6 @@ public class ConfigUi : Window, IDisposable
                 }
             }
         }
-
-        //if (ImGui.Button("Faded Copy Converter Check?"))
-        //{
-        //    Roller.UpdateFadedCopy((uint)debugValue, out uint nonfaded);
-        //    Svc.Log.Debug($"Non-Faded is {nonfaded}");\
-        //}
-
-        //if (ImGui.Button("Check all Faded Copies"))
-        //{
-        //    foreach (var i in Svc.Data.GetExcelSheet<Item>().Where(x => x.FilterGroup == 12 && x.ItemUICategory.Row == 94))
-        //    {
-        //        Roller.UpdateFadedCopy((uint)i.RowId, out uint nonfaded);
-        //        Svc.Log.Debug($"{i.Name}");
-        //    }
-        //}
     }
 
     private void DrawDiagnostics()
@@ -289,7 +274,7 @@ public class ConfigUi : Window, IDisposable
 
         ImGui.Checkbox("###RestrictionSeals", ref LazyLoot.Config.RestrictionSeals);
         ImGui.SameLine();
-        ImGui.Text("Pass on items with a expert delivery seal value of less than");
+        ImGui.Text("Pass on items with an expert delivery seal value of less than");
         ImGui.SameLine();
         ImGui.SetNextItemWidth(100);
         ImGui.DragInt("###RestrictionSealsAmnt", ref LazyLoot.Config.RestrictionSealsAmnt);
@@ -297,6 +282,10 @@ public class ConfigUi : Window, IDisposable
         ImGui.Text($"(item level {Roller.ConvertSealsToIlvl(LazyLoot.Config.RestrictionSealsAmnt)} and below)");
         ImGuiComponents.HelpMarker(
             "This setting will only apply to gear able to be turned in for expert delivery.");
+        
+        ImGui.Checkbox("###NeverPassGlam", ref LazyLoot.Config.NeverPassGlam);
+        ImGui.SameLine();
+        ImGui.Text("Never pass on glamour items (Items that have an item and iLvl of 1)");
     }
 
     private static void CenterText()

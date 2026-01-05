@@ -180,6 +180,14 @@ internal static class Roller
             return RollResult.Passed;
         }
 
+        if (LazyLoot.Config.NeverPassGlam && lootItem.Value.LevelItem.RowId == 1)
+        {
+            if (LazyLoot.Config.DiagnosticsMode)
+                DuoLog.Debug(
+                    $"{lootItem.Value.Name} has been set to not pass if possible due to being set to never skip glamour items. [Never Pass Glam]");
+            return RollResult.Needed;
+        }
+        
         if (orchId.Count > 0 && orchId.All(x => IsItemUnlocked(x)))
         {
             if (LazyLoot.Config.RestrictionIgnoreItemUnlocked)
@@ -233,7 +241,7 @@ internal static class Roller
         }
 
         if (LazyLoot.Config.RestrictionSeals)
-            if (lootItem.Value.Rarity > 1 && lootItem.Value.PriceLow > 0 && lootItem.Value.ClassJobCategory.RowId > 0)
+            if (lootItem.Value is { Rarity: > 1, PriceLow: > 0, ClassJobCategory.RowId: > 0 })
             {
                 var gcSealValue = Svc.Data.Excel.GetSheet<GCSupplyDutyReward>()?.GetRow(lootItem.Value.LevelItem.RowId)
                     .SealsExpertDelivery;
