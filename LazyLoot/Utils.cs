@@ -2,15 +2,12 @@
 using ECommons.DalamudServices;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 
-namespace LazyLoot
+namespace LazyLoot;
+
+internal class Utils
 {
-    internal class Utils
+    public static unsafe int GetPlayerIlevel()
     {
-        public unsafe static int GetPlayerIlevel()
-        {
-            return UIState.Instance()->CurrentItemLevel;
-            var atkArrayDataHolder = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework.Instance()->GetUIModule()->GetRaptureAtkModule()->AtkModule.AtkArrayDataHolder;
-            return atkArrayDataHolder.NumberArrays[64]->IntArray[21];
-        }
+        return UIState.Instance()->CurrentItemLevel;
     }
 }

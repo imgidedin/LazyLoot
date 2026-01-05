@@ -4,7 +4,6 @@ using Dalamud.Game.Gui.Dtr;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
-using Dalamud.Logging;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using ECommons;
@@ -20,7 +19,7 @@ namespace LazyLoot;
 
 public class LazyLoot : IDalamudPlugin, IDisposable
 {
-    static readonly RollResult[] _rollArray = new RollResult[]
+    private static readonly RollResult[] _rollArray = new RollResult[]
     {
         RollResult.Needed,
         RollResult.Greeded,
@@ -42,8 +41,8 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 
         Config = Svc.PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         ConfigUi = new ConfigUi();
-        DtrEntry ??= Svc.DtrBar.Get("LazyLoot");
-        DtrEntry.OnClick = new((i) => CycleFulf());
+        DtrEntry = Svc.DtrBar.Get("LazyLoot");
+        DtrEntry.OnClick = OnDtrClick;
 
 
         Svc.PluginInterface.UiBuilder.OpenMainUi += OnOpenConfigUi;
@@ -71,6 +70,25 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         Svc.Framework.Update += OnFrameworkUpdate;
     }
 
+    private static void OnDtrClick(DtrInteractionEvent ev)
+    {
+        if (ev.ModifierKeys.HasFlag(ClickModifierKeys.Ctrl))
+        {
+            ConfigUi.IsOpen = true;
+            return;
+        }
+        switch (ev.ClickType)
+        {
+            case MouseClickType.Left:
+                CycleFulf(true);
+                break;
+
+            case MouseClickType.Right:
+                CycleFulf(false);
+                break;
+        }
+    }
+
     private void LazyCommand(string command, string arguments)
     {
         var args = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -84,25 +102,45 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         }
     }
 
-    private static void CycleFulf()
+    private static void CycleFulf(bool forward)
     {
         if (!Config.FulfEnabled)
         {
             Config.FulfEnabled = true;
-            Config.FulfRoll = 2;
+            Config.FulfRoll = forward ? 2 : 0;
+            Config.Save();
+            return;
+        }
+
+        if (forward)
+        {
+            switch (Config.FulfRoll)
+            {
+                case 2:
+                    Config.FulfRoll = 1;
+                    break;
+                case 1:
+                    Config.FulfRoll = 0;
+                    break;
+                default:
+                    Config.FulfEnabled = false;
+                    break;
+            }
         }
         else
         {
-            Config.FulfRoll = Config.FulfRoll switch
+            switch (Config.FulfRoll)
             {
-                0 => 2,
-                1 => 0,
-                2 => 1,
-                _ => throw new ArgumentOutOfRangeException(nameof(Config.FulfRoll)),
-            };
-
-            if (Config.FulfRoll == 2)
-                Config.FulfEnabled = false;
+                case 0:
+                    Config.FulfRoll = 1;
+                    break;
+                case 1:
+                    Config.FulfRoll = 2;
+                    break;
+                default:
+                    Config.FulfEnabled = false;
+                    break;
+            }
         }
 
         Config.Save();
@@ -140,21 +178,13 @@ public class LazyLoot : IDalamudPlugin, IDisposable
     {
         var res = GetResult(arguments);
         if (res.HasValue)
-        {
             Config.FulfRoll = res.Value;
-        }
         else if (arguments.Contains("off", StringComparison.CurrentCultureIgnoreCase))
-        {
             Config.FulfEnabled = false;
-        }
         else if (arguments.Contains("on", StringComparison.CurrentCultureIgnoreCase))
-        {
             Config.FulfEnabled = true;
-        }
         else
-        {
             Config.FulfEnabled = !Config.FulfEnabled;
-        }
     }
 
     private void RollingCommand(string command, string arguments)

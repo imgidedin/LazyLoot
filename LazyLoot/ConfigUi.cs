@@ -17,6 +17,7 @@ using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using ECommons.Reflection;
 
 namespace LazyLoot;
 
@@ -79,6 +80,8 @@ public class ConfigUi : Window, IDisposable
                 DrawRollingDelay();
                 ImGui.Separator();
                 DrawChatAndToast();
+                ImGui.Separator();
+                DrawDtrToggle();
                 ImGui.Separator();
                 DrawFulf();
                 ImGui.Separator();
@@ -183,7 +186,7 @@ public class ConfigUi : Window, IDisposable
 
     private static void DrawFeatures()
     {
-        ImGuiEx.ImGuiLineCentered("FeaturesLabel", () => ImGuiEx.TextUnderlined("LazyLoot Rolling Commands"));
+        ImGuiEx.LineCentered("FeaturesLabel", () => ImGuiEx.TextUnderlined("LazyLoot Rolling Commands"));
         ImGui.Columns(2, ImU8String.Empty, false);
         ImGui.SetColumnWidth(0, 80);
         ImGui.Text("/lazy need");
@@ -840,6 +843,45 @@ public class ConfigUi : Window, IDisposable
         ImGui.Checkbox("Error", ref LazyLoot.Config.EnableErrorToast);
     }
 
+    private static void DrawDtrToggle()
+    {
+        ImGui.Spacing();
+        ImGui.Text("Server Info Bar (DTR)");
+        try
+        {
+            var config = DalamudReflector.GetService("Dalamud.Configuration.Internal.DalamudConfiguration");
+            var dtrIgnore = config.GetFoP<List<string>>("DtrIgnore");
+            var internalName = Svc.PluginInterface.InternalName;
+            var enabled = !dtrIgnore.Contains(internalName);
+            if (ImGui.Checkbox("###LazyLootDtrEnabled", ref enabled))
+            {
+                if (enabled)
+                {
+                    dtrIgnore.Remove(internalName);
+                }
+                else
+                {
+                    if (!dtrIgnore.Contains(internalName))
+                        dtrIgnore.Add(internalName);
+                }
+                config.Call("QueueSave", Array.Empty<object>());
+            }
+
+            ImGui.SameLine();
+            ImGui.TextColored(
+                enabled ? ImGuiColors.HealerGreen : ImGuiColors.DalamudRed,
+                enabled ? "DTR Enabled" : "DTR Disabled"
+            );
+
+            ImGui.TextWrapped("Show/hide LazyLoot in the Dalamud Server Info Bar (DTR).");
+        }
+        catch (Exception e)
+        {
+            ImGui.TextColored(ImGuiColors.DalamudRed, "Failed to access Dalamud DTR settings.");
+            ImGui.TextWrapped(e.ToString());
+        }
+    }
+    
     private void DrawFulf()
     {
         ImGuiEx.LineCentered("FULFLabel", () => ImGuiEx.TextUnderlined("Fancy Ultimate Lazy Feature"));
