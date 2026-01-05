@@ -458,18 +458,14 @@ internal static class Roller
     }
 
     internal static LlDecision WhatWouldLlDo(uint itemId)
-    {
-        RollResult baseIntent;
-        if (!LazyLoot.Config.FulfEnabled)
-            baseIntent = RollResult.UnAwarded;
-        else
-            baseIntent = LazyLoot.Config.FulfRoll switch
-            {
-                0 => RollResult.Needed,
-                1 => RollResult.Greeded,
-                2 => RollResult.Passed,
-                _ => RollResult.UnAwarded
-            };
+    { 
+        RollResult baseIntent = LazyLoot.Config.FulfRoll switch
+        {
+            0 => RollResult.Needed,
+            1 => RollResult.Greeded,
+            2 => RollResult.Passed,
+            _ => RollResult.UnAwarded
+        };
 
         var custom = GetCustomRuleByItemId(itemId);
         var chosen = custom ?? baseIntent;
