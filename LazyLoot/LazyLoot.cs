@@ -489,14 +489,15 @@ public class LazyLoot : IDalamudPlugin, IDisposable
             _                           => 0
         };
 
-        Svc.Chat.Print(new SeString(new List<Payload>
-        {
-            new TextPayload($"[LazyLoot Item Test] :: {itemId} - "),
-            new ItemPayload(itemId),
-            new TextPayload($" :: "),
-            new UIForegroundPayload(decisionColor),
-            new TextPayload($"{decisionText}"),
-            new UIForegroundPayload(0),
-        }));
+        Svc.Chat.Print(new() {
+            Message = new SeString(new List<Payload> {
+                new TextPayload($"[LazyLoot Item Test] :: {itemId} - "),
+                new ItemPayload(itemId, false),
+                new TextPayload($" :: "),
+                new UIForegroundPayload(decisionColor),
+                new TextPayload($"{decisionText}"),
+                new UIForegroundPayload(0),
+            })
+        });
     }
 }
