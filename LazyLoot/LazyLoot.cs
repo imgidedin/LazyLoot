@@ -99,18 +99,28 @@ public class LazyLoot : IDalamudPlugin, IDisposable
     private void LazyCommand(string command, string arguments)
     {
         var args = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-
-        switch (args.Length)
+        if (args.Length == 0)
         {
-            case 0:
-                OnOpenConfigUi();
-                return;
-            case >= 2 when args[0].Equals("test", StringComparison.OrdinalIgnoreCase):
-                TestWhatWouldLlDo(string.Join(" ", args.Skip(1)));
-                return;
+            OnOpenConfigUi();
+            return;
+        }
+
+        switch (args[0].ToLowerInvariant())
+        {
+            case "test" when args.Length >= 2:
+            {
+                switch (args[1].ToLowerInvariant())
+                {
+                    case "item":
+                        TestWhatWouldLlDo(string.Join(" ", args.Skip(2)));
+                        return;
+                }
+
+                break;
+            }
             default:
                 RollingCommand(null!, arguments);
-                break;
+                return;
         }
     }
 
@@ -250,8 +260,9 @@ public class LazyLoot : IDalamudPlugin, IDisposable
             dtrText = "FULF Disabled";
         }
 
-        if (Config is { RestrictionWeeklyLockoutItems: true, WeeklyLockoutDutyActive: true })
-            dtrText += " (Disabled | WLD)";
+        var isWld = Config is { RestrictionWeeklyLockoutItems: true, WeeklyLockoutDutyActive: true };
+
+        if (isWld) dtrText += " (Disabled | WLD)";
 
         _dtrEntry.Text = new SeString(
             new IconPayload(BitmapFontIcon.Dice),
@@ -259,10 +270,9 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 
         _dtrEntry.Shown = true;
 
-        //Not sure why the below line is here? You can only roll on loot in duties anyway, plus it helps when SE changes which flag a duty has (such as Keeper of the Lake using BoundByDuty56)
-        //if (!Svc.Condition[ConditionFlag.BoundByDuty]) return;
-        if (!Config.RestrictionWeeklyLockoutItems || !Config.WeeklyLockoutDutyActive)
-            RollLoot();
+        if (isWld) return;
+
+        RollLoot();
     }
 
     private static void RollLoot()
@@ -337,7 +347,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         if (type is XivChatType.SystemMessage)
             UpdateWeeklyLockoutDutyFlag(message);
 
-        if (!Config.FulfEnabled || type is not XivChatType.SystemMessage) return;
+        if (!Config.FulfEnabled || type != (XivChatType)2105) return;
 
         string textValue = message.TextValue;
         if (textValue == Svc.Data.GetExcelSheet<LogMessage>().First(x => x.RowId == 5194).Text)
@@ -413,6 +423,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 
     private static bool IsHighEndDutyTerritory(ushort territoryId)
     {
+        return true;
         var territory = Svc.Data.GetExcelSheet<TerritoryType>().GetRowOrDefault(territoryId);
         var contentFinder = territory?.ContentFinderCondition.Value;
         return contentFinder is { HighEndDuty: true };
@@ -479,14 +490,14 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         }
 
         var item = itemSheet.GetRow(itemId);
-        
+
         var tempDiagnosticsMode = Config.DiagnosticsMode;
         Config.DiagnosticsMode = true;
         Config.Save();
         var decision = Roller.WhatWouldLlDo(itemId);
         Config.DiagnosticsMode = tempDiagnosticsMode;
         Config.Save();
-        
+
         var decisionText = decision switch
         {
             Roller.LlDecision.DoNothing => "DO NOTHING",
@@ -503,7 +514,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
             Roller.LlDecision.Need => 45, // Green
             _ => 0
         };
-        
+
         Svc.Chat.Print(new SeString(new List<Payload>
             {
                 new TextPayload($"[LazyLoot Item Test] :: ID {itemId} :: "),
