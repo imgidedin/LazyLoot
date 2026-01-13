@@ -423,7 +423,6 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 
     private static bool IsHighEndDutyTerritory(ushort territoryId)
     {
-        return true;
         var territory = Svc.Data.GetExcelSheet<TerritoryType>().GetRowOrDefault(territoryId);
         var contentFinder = territory?.ContentFinderCondition.Value;
         return contentFinder is { HighEndDuty: true };
