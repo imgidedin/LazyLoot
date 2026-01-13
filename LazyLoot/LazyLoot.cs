@@ -106,7 +106,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
                 OnOpenConfigUi();
                 return;
             case >= 2 when args[0].Equals("test", StringComparison.OrdinalIgnoreCase):
-                TestWhatWouldLlDo(args[1]);
+                TestWhatWouldLlDo(string.Join(" ", args.Skip(1)));
                 return;
             default:
                 RollingCommand(null!, arguments);
@@ -422,7 +422,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
     {
         if (string.IsNullOrWhiteSpace(idOrNameArg))
         {
-            DuoLog.Error("Usage: /lazy test <Item ID or Item Name>");
+            DuoLog.Debug("Usage: /lazy test <Item ID or Item Name>");
             return;
         }
 
@@ -438,24 +438,30 @@ public class LazyLoot : IDalamudPlugin, IDisposable
             switch (matches.Count)
             {
                 case 0:
-                    DuoLog.Error($"No item found matching your search '{search}'.");
+                    DuoLog.Debug($"No item found matching your search '{search}'.");
                     return;
                 case > 1:
                 {
                     Svc.Chat.Print(new SeString(new List<Payload>
                     {
                         new TextPayload(
-                            $"Multiple items were found with your search '{search}'. Showing the first 5:")
+                            $"Found {matches.Count} entries for search '{search}'. Showing the first 5:")
                     }));
 
                     foreach (var match in matches.Take(5))
                     {
-                        Svc.Chat.Print(new() {
-                            Message = new SeString(new List<Payload> {
-                                new TextPayload($"[LazyLoot Item Test] :: {itemId} - "),
-                                new ItemPayload(itemId, false),
+                        Svc.Chat.Print(new SeString(new List<Payload>
+                            {
+                                new TextPayload($"[LazyLoot Item Test] :: ID {match.RowId} :: "),
+                                new UIForegroundPayload((ushort)(0x223 + match.Rarity * 2)),
+                                new UIGlowPayload((ushort)(0x224 + match.Rarity * 2)),
+                                new ItemPayload(match.RowId, true),
+                                new TextPayload(match.Name.ExtractText()),
+                                RawPayload.LinkTerminator,
+                                new UIForegroundPayload(0),
+                                new UIGlowPayload(0),
                             })
-                        });
+                        );
                     }
 
                     return;
@@ -471,8 +477,16 @@ public class LazyLoot : IDalamudPlugin, IDisposable
             DuoLog.Error($"Invalid item id or name: '{idOrNameArg}'.");
             return;
         }
+
+        var item = itemSheet.GetRow(itemId);
         
+        var tempDiagnosticsMode = Config.DiagnosticsMode;
+        Config.DiagnosticsMode = true;
+        Config.Save();
         var decision = Roller.WhatWouldLlDo(itemId);
+        Config.DiagnosticsMode = tempDiagnosticsMode;
+        Config.Save();
+        
         var decisionText = decision switch
         {
             Roller.LlDecision.DoNothing => "DO NOTHING",
@@ -483,22 +497,28 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         };
         ushort decisionColor = decision switch
         {
-            Roller.LlDecision.DoNothing => 8,    // Grey
-            Roller.LlDecision.Pass      => 14,   // Red
-            Roller.LlDecision.Greed     => 500,  // Yellow
-            Roller.LlDecision.Need      => 45,   // Green
-            _                           => 0
+            Roller.LlDecision.DoNothing => 8, // Grey
+            Roller.LlDecision.Pass => 14, // Red
+            Roller.LlDecision.Greed => 500, // Yellow
+            Roller.LlDecision.Need => 45, // Green
+            _ => 0
         };
-
-        Svc.Chat.Print(new() {
-            Message = new SeString(new List<Payload> {
-                new TextPayload($"[LazyLoot Item Test] :: {itemId} - "),
-                new ItemPayload(itemId, false),
-                new TextPayload($" :: "),
+        
+        Svc.Chat.Print(new SeString(new List<Payload>
+            {
+                new TextPayload($"[LazyLoot Item Test] :: ID {itemId} :: "),
+                new UIForegroundPayload((ushort)(0x223 + item.Rarity * 2)),
+                new UIGlowPayload((ushort)(0x224 + item.Rarity * 2)),
+                new ItemPayload(item.RowId, true),
+                new TextPayload(item.Name.ExtractText()),
+                RawPayload.LinkTerminator,
+                new UIForegroundPayload(0),
+                new UIGlowPayload(0),
+                new TextPayload(" :: "),
                 new UIForegroundPayload(decisionColor),
                 new TextPayload($"{decisionText}"),
                 new UIForegroundPayload(0),
             })
-        });
+        );
     }
 }
