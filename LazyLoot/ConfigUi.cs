@@ -238,7 +238,7 @@ public class ConfigUi : Window, IDisposable
         ImGui.Checkbox("Pass on items I can't use with current job.",
             ref LazyLoot.Config.RestrictionOtherJobItems);
 
-        ImGui.Checkbox("Don't roll on items with a weekly lockout.",
+        ImGui.Checkbox("Don't roll on items or duties with a weekly lockout.",
             ref LazyLoot.Config.RestrictionWeeklyLockoutItems);
 
         ImGui.Checkbox("###RestrictionWeeklyLockoutItems", ref LazyLoot.Config.RestrictionLootLowerThanJobIlvl);
@@ -898,6 +898,9 @@ public class ConfigUi : Window, IDisposable
         ImGui.SameLine();
         ImGui.TextColored(LazyLoot.Config.FulfEnabled ? ImGuiColors.HealerGreen : ImGuiColors.DalamudRed,
             LazyLoot.Config.FulfEnabled ? "FULF Enabled" : "FULF Disabled");
+        if (LazyLoot.Config.RestrictionWeeklyLockoutItems && LazyLoot.Config.WeeklyLockoutDutyActive)
+            ImGui.TextColored(ImGuiColors.DalamudYellow,
+                "Weekly Lockout Duty detected: FULF and /lazy rolls are temporarily disabled until you leave this duty or disable the weekly lockout setting.");
 
         ImGui.SetNextItemWidth(100);
 

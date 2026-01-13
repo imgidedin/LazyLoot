@@ -49,6 +49,8 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         Svc.PluginInterface.UiBuilder.OpenMainUi += OnOpenConfigUi;
         Svc.PluginInterface.UiBuilder.OpenConfigUi += OnOpenConfigUi;
         Svc.Chat.CheckMessageHandled += NoticeLoot;
+        Svc.ClientState.TerritoryChanged += OnTerritoryChanged;
+        SyncWeeklyLockoutDutyState(Svc.ClientState.TerritoryType);
 
         Svc.Commands.AddHandler("/lazyloot", new CommandInfo(LazyCommand)
         {
@@ -166,6 +168,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         Svc.PluginInterface.UiBuilder.OpenMainUi -= OnOpenConfigUi;
         Svc.PluginInterface.UiBuilder.OpenConfigUi -= OnOpenConfigUi;
         Svc.Chat.CheckMessageHandled -= NoticeLoot;
+        Svc.ClientState.TerritoryChanged -= OnTerritoryChanged;
 
         Svc.Commands.RemoveHandler("/lazyloot");
         Svc.Commands.RemoveHandler("/lazy");
@@ -226,33 +229,35 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 
     private void OnFrameworkUpdate(IFramework framework)
     {
+        string dtrText;
         if (Config.FulfEnabled)
         {
-            var fulfMode = Config.FulfRoll switch
+            dtrText = Config.FulfRoll switch
             {
                 0 => "Needing",
                 1 => "Greeding",
                 2 => "Passing",
                 _ => throw new ArgumentOutOfRangeException(nameof(Config.FulfRoll)),
             };
-
-            DtrEntry.Text = new SeString(
-                new IconPayload(BitmapFontIcon.Dice),
-                new TextPayload(fulfMode));
-
         }
         else
         {
-            DtrEntry.Text = new SeString(
-            new IconPayload(BitmapFontIcon.Dice),
-            new TextPayload("FULF Disabled"));
+            dtrText = "FULF Disabled";
         }
+
+        if (Config is { RestrictionWeeklyLockoutItems: true, WeeklyLockoutDutyActive: true })
+            dtrText += " (Disabled | WLD)";
+
+        DtrEntry.Text = new SeString(
+            new IconPayload(BitmapFontIcon.Dice),
+            new TextPayload(dtrText));
 
         DtrEntry.Shown = true;
 
         //Not sure why the below line is here? You can only roll on loot in duties anyway, plus it helps when SE changes which flag a duty has (such as Keeper of the Lake using BoundByDuty56)
         //if (!Svc.Condition[ConditionFlag.BoundByDuty]) return;
-        RollLoot();
+        if (!Config.RestrictionWeeklyLockoutItems || !Config.WeeklyLockoutDutyActive)
+            RollLoot();
     }
 
     static DateTime _nextRollTime = DateTime.Now;
@@ -325,7 +330,10 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 
     private void NoticeLoot(XivChatType type, int senderId, ref SeString sender, ref SeString message, ref bool isHandled)
     {
-        if (!Config.FulfEnabled || type != (XivChatType)2105) return;
+        if (type is XivChatType.SystemMessage)
+            UpdateWeeklyLockoutDutyFlag(message);
+
+        if (!Config.FulfEnabled || type is not XivChatType.SystemMessage) return;
 
         string textValue = message.TextValue;
         if (textValue == Svc.Data.GetExcelSheet<LogMessage>()!.First(x => x.RowId == 5194).Text)
@@ -337,7 +345,75 @@ public class LazyLoot : IDalamudPlugin, IDisposable
             _rollOption = _rollArray[Config.FulfRoll];
         }
     }
-    
+
+    private static void UpdateWeeklyLockoutDutyFlag(SeString message)
+    {
+        if (!Config.RestrictionWeeklyLockoutItems || Config.WeeklyLockoutDutyActive)
+            return;
+
+        if (!IsHighEndDutyTerritory(Svc.ClientState.TerritoryType))
+        {
+            ClearWeeklyLockoutDutyState();
+            return;
+        }
+
+        var logMessage = Svc.Data.GetExcelSheet<LogMessage>()?.GetRowOrDefault(4234);
+        if (logMessage == null)
+            return;
+
+        if (message.TextValue == logMessage.Value.Text)
+        {
+            Config.WeeklyLockoutDutyActive = true;
+            Config.WeeklyLockoutDutyTerritoryId = Svc.ClientState.TerritoryType;
+            Config.Save();
+            DuoLog.Debug("Weekly lockout duty detected! Rolling is temporarily suspended.");
+        }
+    }
+
+    private static void OnTerritoryChanged(ushort territoryId)
+    {
+        if (!IsHighEndDutyTerritory(territoryId))
+        {
+            ClearWeeklyLockoutDutyState();
+            return;
+        }
+
+        if (!Config.WeeklyLockoutDutyActive)
+            return;
+
+        if (Config.WeeklyLockoutDutyTerritoryId == territoryId)
+            return;
+
+        ClearWeeklyLockoutDutyState();
+    }
+
+    private static void SyncWeeklyLockoutDutyState(ushort territoryId)
+    {
+        if (!Config.WeeklyLockoutDutyActive)
+            return;
+
+        if (!IsHighEndDutyTerritory(territoryId) || Config.WeeklyLockoutDutyTerritoryId != territoryId)
+            ClearWeeklyLockoutDutyState();
+    }
+
+    private static void ClearWeeklyLockoutDutyState()
+    {
+        if (Config is { WeeklyLockoutDutyActive: false, WeeklyLockoutDutyTerritoryId: 0 })
+            return;
+
+        Config.WeeklyLockoutDutyActive = false;
+        Config.WeeklyLockoutDutyTerritoryId = 0;
+        Config.Save();
+        DuoLog.Debug("Weekly lockout duty suspension cleared.");
+    }
+
+    private static bool IsHighEndDutyTerritory(ushort territoryId)
+    {
+        var territory = Svc.Data.GetExcelSheet<TerritoryType>()?.GetRowOrDefault(territoryId);
+        var contentFinder = territory?.ContentFinderCondition.Value;
+        return contentFinder is { HighEndDuty: true };
+    }
+
     private static void TestWhatWouldLLDo(string idArg)
     {
         if (!uint.TryParse(idArg, out var itemId) || itemId == 0)
@@ -358,5 +434,4 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         };
         DuoLog.Debug($"[LL Test] {itemName} (ID {itemId}) -> {decisionText}.");
     }
-    
 }

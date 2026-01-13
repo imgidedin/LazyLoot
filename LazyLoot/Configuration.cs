@@ -63,6 +63,8 @@ namespace LazyLoot
         public bool RestrictionOtherJobItems = false;
         // Weekly lockout items
         public bool RestrictionWeeklyLockoutItems = false;
+        public bool WeeklyLockoutDutyActive = false;
+        public ushort WeeklyLockoutDutyTerritoryId = 0;
         // Loot is below a certain treshhold for the current job ilvl
         public bool RestrictionLootLowerThanJobIlvl = false;
         public int RestrictionLootLowerThanJobIlvlTreshold = 30;
