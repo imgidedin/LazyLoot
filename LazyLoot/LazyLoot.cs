@@ -431,7 +431,8 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         {
             var search = idOrNameArg.Trim();
             var matches = itemSheet
-                .Where(x => x.Name.ToString().Equals(search, StringComparison.OrdinalIgnoreCase))
+                .Where(x => x.Name.ToString()
+                    .Contains(search, StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
             switch (matches.Count)
@@ -469,8 +470,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
             DuoLog.Error($"Invalid item id or name: '{idOrNameArg}'.");
             return;
         }
-
-        var item = itemSheet.GetRow(itemId);
+        
         var decision = Roller.WhatWouldLlDo(itemId);
         var decisionText = decision switch
         {
@@ -491,9 +491,9 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 
         Svc.Chat.Print(new SeString(new List<Payload>
         {
-            new TextPayload($"[LazyLoot Item Test] {item.RowId} - "),
-            new ItemPayload(item.RowId),
-            new TextPayload($": "),
+            new TextPayload($"[LazyLoot Item Test] :: {itemId} - "),
+            new ItemPayload(itemId),
+            new TextPayload($" :: "),
             new UIForegroundPayload(decisionColor),
             new TextPayload($"{decisionText}"),
             new UIForegroundPayload(0),
