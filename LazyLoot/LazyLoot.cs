@@ -480,12 +480,23 @@ public class LazyLoot : IDalamudPlugin, IDisposable
             Roller.LlDecision.Need => "NEED",
             _ => $"UNKNOWN ({decision})"
         };
+        ushort decisionColor = decision switch
+        {
+            Roller.LlDecision.DoNothing => 8,    // Grey
+            Roller.LlDecision.Pass      => 14,   // Red
+            Roller.LlDecision.Greed     => 500,  // Yellow
+            Roller.LlDecision.Need      => 45,   // Green
+            _                           => 0
+        };
 
         Svc.Chat.Print(new SeString(new List<Payload>
         {
             new TextPayload($"[LazyLoot Item Test] {item.RowId} - "),
             new ItemPayload(item.RowId),
-            new TextPayload($": {decisionText}"),
+            new TextPayload($": "),
+            new UIForegroundPayload(decisionColor),
+            new TextPayload($"{decisionText}"),
+            new UIForegroundPayload(0),
         }));
     }
 }
