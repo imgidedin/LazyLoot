@@ -165,7 +165,6 @@ public class ConfigUi : Window, IDisposable
     public override void OnClose()
     {
         LazyLoot.Config.Save();
-        Notify.Success("Configuration saved");
         base.OnClose();
     }
 

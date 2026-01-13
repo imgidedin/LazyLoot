@@ -20,30 +20,32 @@ namespace LazyLoot;
 
 public class LazyLoot : IDalamudPlugin, IDisposable
 {
-    private static readonly RollResult[] _rollArray = new RollResult[]
-    {
+    private static readonly RollResult[] RollArray =
+    [
         RollResult.Needed,
         RollResult.Greeded,
-        RollResult.Passed,
-    };
+        RollResult.Passed
+    ];
 
     public string Name => "LazyLoot";
 
     internal static Configuration Config;
-    internal static ConfigUi ConfigUi;
-    internal static IDtrBarEntry DtrEntry;
+    private static ConfigUi _configUi;
+    private static IDtrBarEntry _dtrEntry;
 
-    internal static LazyLoot P;
+    static DateTime _nextRollTime = DateTime.Now;
+    static RollResult _rollOption = RollResult.UnAwarded;
+    private static int _need = 0, _greed = 0, _pass = 0;
+
     public LazyLoot(IDalamudPluginInterface pluginInterface)
     {
         ECommonsMain.Init(pluginInterface, this);
         PunishLibMain.Init(pluginInterface, "LazyLoot", new AboutPlugin() { Developer = "53m1k0l0n/Gidedin" });
-        P = this;
 
         Config = Svc.PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
-        ConfigUi = new ConfigUi();
-        DtrEntry = Svc.DtrBar.Get("LazyLoot");
-        DtrEntry.OnClick = OnDtrClick;
+        _configUi = new ConfigUi();
+        _dtrEntry = Svc.DtrBar.Get("LazyLoot");
+        _dtrEntry.OnClick = OnDtrClick;
 
 
         Svc.PluginInterface.UiBuilder.OpenMainUi += OnOpenConfigUi;
@@ -66,7 +68,8 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 
         Svc.Commands.AddHandler("/fulf", new CommandInfo(FulfCommand)
         {
-            HelpMessage = "Enable/Disable FULF with /fulf [on|off] or change the loot rule with /fulf need | greed | pass.",
+            HelpMessage =
+                "Enable/Disable FULF with /fulf [on|off] or change the loot rule with /fulf need | greed | pass.",
             ShowInHelp = true,
         });
 
@@ -77,9 +80,10 @@ public class LazyLoot : IDalamudPlugin, IDisposable
     {
         if (ev.ModifierKeys.HasFlag(ClickModifierKeys.Ctrl))
         {
-            ConfigUi.IsOpen = true;
+            _configUi.IsOpen = true;
             return;
         }
+
         switch (ev.ClickType)
         {
             case MouseClickType.Left:
@@ -177,7 +181,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         ECommonsMain.Dispose();
         PunishLibMain.Dispose();
         Svc.Log.Information(">>Stop LazyLoot<<");
-        DtrEntry.Remove();
+        _dtrEntry.Remove();
 
         Svc.Framework.Update -= OnFrameworkUpdate;
         Config.Save();
@@ -201,11 +205,11 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         var res = GetResult(arguments);
         if (res.HasValue)
         {
-            _rollOption = _rollArray[res.Value % 3];
+            _rollOption = RollArray[res.Value % 3];
         }
     }
 
-    private int? GetResult(string str)
+    private static int? GetResult(string str)
     {
         if (str.Contains("need", StringComparison.OrdinalIgnoreCase))
         {
@@ -219,15 +223,16 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         {
             return 2;
         }
+
         return null;
     }
 
-    private void OnOpenConfigUi()
+    private static void OnOpenConfigUi()
     {
-        ConfigUi.IsOpen = !ConfigUi.IsOpen;
+        _configUi.IsOpen = !_configUi.IsOpen;
     }
 
-    private void OnFrameworkUpdate(IFramework framework)
+    private static void OnFrameworkUpdate(IFramework framework)
     {
         string dtrText;
         if (Config.FulfEnabled)
@@ -248,11 +253,11 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         if (Config is { RestrictionWeeklyLockoutItems: true, WeeklyLockoutDutyActive: true })
             dtrText += " (Disabled | WLD)";
 
-        DtrEntry.Text = new SeString(
+        _dtrEntry.Text = new SeString(
             new IconPayload(BitmapFontIcon.Dice),
             new TextPayload(dtrText));
 
-        DtrEntry.Shown = true;
+        _dtrEntry.Shown = true;
 
         //Not sure why the below line is here? You can only roll on loot in duties anyway, plus it helps when SE changes which flag a duty has (such as Keeper of the Lake using BoundByDuty56)
         //if (!Svc.Condition[ConditionFlag.BoundByDuty]) return;
@@ -260,9 +265,6 @@ public class LazyLoot : IDalamudPlugin, IDisposable
             RollLoot();
     }
 
-    static DateTime _nextRollTime = DateTime.Now;
-    static RollResult _rollOption = RollResult.UnAwarded;
-    static int _need = 0, _greed = 0, _pass = 0;
     private static void RollLoot()
     {
         if (_rollOption == RollResult.UnAwarded) return;
@@ -273,17 +275,15 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 
         _nextRollTime = DateTime.Now.AddMilliseconds(Math.Max(1500, new Random()
             .Next((int)(Config.MinRollDelayInSeconds * 1000),
-            (int)(Config.MaxRollDelayInSeconds * 1000))));
+                (int)(Config.MaxRollDelayInSeconds * 1000))));
 
         try
         {
-            if (!Roller.RollOneItem(_rollOption, ref _need, ref _greed, ref _pass)) //Finish the loot
-            {
-                ShowResult(_need, _greed, _pass);
-                _need = _greed = _pass = 0;
-                _rollOption = RollResult.UnAwarded;
-                Roller.Clear();
-            }
+            if (Roller.RollOneItem(_rollOption, ref _need, ref _greed, ref _pass)) return; //Finish the loot
+            ShowResult(_need, _greed, _pass);
+            _need = _greed = _pass = 0;
+            _rollOption = RollResult.UnAwarded;
+            Roller.Clear();
         }
         catch (Exception ex)
         {
@@ -314,14 +314,17 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         {
             Svc.Chat.Print(seString);
         }
+
         if (Config.EnableErrorToast)
         {
             Svc.Toasts.ShowError(seString);
         }
+
         if (Config.EnableNormalToast)
         {
             Svc.Toasts.ShowNormal(seString);
         }
+
         if (Config.EnableQuestToast)
         {
             Svc.Toasts.ShowQuest(seString);
@@ -340,9 +343,9 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         {
             _nextRollTime = DateTime.Now.AddMilliseconds(new Random()
                 .Next((int)(Config.FulfMinRollDelayInSeconds * 1000),
-                (int)(Config.FulfMaxRollDelayInSeconds * 1000)));
+                    (int)(Config.FulfMaxRollDelayInSeconds * 1000)));
 
-            _rollOption = _rollArray[Config.FulfRoll];
+            _rollOption = RollArray[Config.FulfRoll];
         }
     }
 
@@ -421,6 +424,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
             DuoLog.Error($"Invalid item id: '{idArg}'. Usage: /lazy test <itemId>");
             return;
         }
+
         var item = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId);
         var itemName = item?.Name.ToString() ?? "<unknown item>";
         var decision = Roller.WhatWouldLlDo(itemId);
