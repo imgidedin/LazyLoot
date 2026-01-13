@@ -450,11 +450,12 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 
                     foreach (var match in matches.Take(5))
                     {
-                        Svc.Chat.Print(new SeString(new List<Payload>
-                        {
-                            new TextPayload($"{match.RowId} - "),
-                            new ItemPayload(match.RowId)
-                        }));
+                        Svc.Chat.Print(new() {
+                            Message = new SeString(new List<Payload> {
+                                new TextPayload($"[LazyLoot Item Test] :: {itemId} - "),
+                                new ItemPayload(itemId, false),
+                            })
+                        });
                     }
 
                     return;
