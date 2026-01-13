@@ -35,7 +35,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 
     static DateTime _nextRollTime = DateTime.Now;
     static RollResult _rollOption = RollResult.UnAwarded;
-    private static int _need = 0, _greed = 0, _pass = 0;
+    private static int _need, _greed, _pass;
 
     public LazyLoot(IDalamudPluginInterface pluginInterface)
     {
@@ -106,7 +106,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
                 OnOpenConfigUi();
                 return;
             case >= 2 when args[0].Equals("test", StringComparison.OrdinalIgnoreCase):
-                TestWhatWouldLLDo(args[1]);
+                TestWhatWouldLlDo(args[1]);
                 return;
             default:
                 RollingCommand(null!, arguments);
@@ -331,7 +331,8 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         }
     }
 
-    private void NoticeLoot(XivChatType type, int senderId, ref SeString sender, ref SeString message, ref bool isHandled)
+    private void NoticeLoot(XivChatType type, int senderId, ref SeString sender, ref SeString message,
+        ref bool isHandled)
     {
         if (type is XivChatType.SystemMessage)
             UpdateWeeklyLockoutDutyFlag(message);
@@ -339,7 +340,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         if (!Config.FulfEnabled || type is not XivChatType.SystemMessage) return;
 
         string textValue = message.TextValue;
-        if (textValue == Svc.Data.GetExcelSheet<LogMessage>()!.First(x => x.RowId == 5194).Text)
+        if (textValue == Svc.Data.GetExcelSheet<LogMessage>().First(x => x.RowId == 5194).Text)
         {
             _nextRollTime = DateTime.Now.AddMilliseconds(new Random()
                 .Next((int)(Config.FulfMinRollDelayInSeconds * 1000),
@@ -360,7 +361,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
             return;
         }
 
-        var logMessage = Svc.Data.GetExcelSheet<LogMessage>()?.GetRowOrDefault(4234);
+        var logMessage = Svc.Data.GetExcelSheet<LogMessage>().GetRowOrDefault(4234);
         if (logMessage == null)
             return;
 
@@ -412,21 +413,64 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 
     private static bool IsHighEndDutyTerritory(ushort territoryId)
     {
-        var territory = Svc.Data.GetExcelSheet<TerritoryType>()?.GetRowOrDefault(territoryId);
+        var territory = Svc.Data.GetExcelSheet<TerritoryType>().GetRowOrDefault(territoryId);
         var contentFinder = territory?.ContentFinderCondition.Value;
         return contentFinder is { HighEndDuty: true };
     }
 
-    private static void TestWhatWouldLLDo(string idArg)
+    private static void TestWhatWouldLlDo(string idOrNameArg)
     {
-        if (!uint.TryParse(idArg, out var itemId) || itemId == 0)
+        if (string.IsNullOrWhiteSpace(idOrNameArg))
         {
-            DuoLog.Error($"Invalid item id: '{idArg}'. Usage: /lazy test <itemId>");
+            DuoLog.Error("Usage: /lazy test <Item ID or Item Name>");
             return;
         }
 
-        var item = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId);
-        var itemName = item?.Name.ToString() ?? "<unknown item>";
+        var itemSheet = Svc.Data.GetExcelSheet<Item>();
+        if (!uint.TryParse(idOrNameArg, out var itemId))
+        {
+            var search = idOrNameArg.Trim();
+            var matches = itemSheet
+                .Where(x => x.Name.ToString().Equals(search, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            switch (matches.Count)
+            {
+                case 0:
+                    DuoLog.Error($"No item found matching your search '{search}'.");
+                    return;
+                case > 1:
+                {
+                    Svc.Chat.Print(new SeString(new List<Payload>
+                    {
+                        new TextPayload(
+                            $"Multiple items were found with your search '{search}'. Showing the first 5:")
+                    }));
+
+                    foreach (var match in matches.Take(5))
+                    {
+                        Svc.Chat.Print(new SeString(new List<Payload>
+                        {
+                            new TextPayload($"{match.RowId} - "),
+                            new ItemPayload(match.RowId)
+                        }));
+                    }
+
+                    return;
+                }
+                default:
+                    itemId = matches[0].RowId;
+                    break;
+            }
+        }
+
+        if (itemId == 0)
+        {
+            DuoLog.Error($"Invalid item id or name: '{idOrNameArg}'.");
+            return;
+        }
+
+        var item = itemSheet.GetRow(itemId);
         var decision = Roller.WhatWouldLlDo(itemId);
         var decisionText = decision switch
         {
@@ -436,6 +480,12 @@ public class LazyLoot : IDalamudPlugin, IDisposable
             Roller.LlDecision.Need => "NEED",
             _ => $"UNKNOWN ({decision})"
         };
-        DuoLog.Debug($"[LL Test] {itemName} (ID {itemId}) -> {decisionText}.");
+
+        Svc.Chat.Print(new SeString(new List<Payload>
+        {
+            new TextPayload($"[LazyLoot Item Test] {item.RowId} - "),
+            new ItemPayload(item.RowId),
+            new TextPayload($": {decisionText}"),
+        }));
     }
 }
