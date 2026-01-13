@@ -179,8 +179,9 @@ internal static class Roller
                     $"{lootItem.Value.Name} has been passed due to being unique and you already possess one. [Unique Item]");
             return RollResult.Passed;
         }
-
-        if (LazyLoot.Config.NeverPassGlam && lootItem.Value.LevelItem.RowId == 1)
+        
+        // Make sure the item is level 1, with ilv of 1 and is an equipment
+        if (LazyLoot.Config.NeverPassGlam && lootItem.Value.LevelEquip == 1 && lootItem.Value.LevelItem.Value.RowId == 1 && lootItem.Value.EquipSlotCategory.Value.RowId != 0)
         {
             if (LazyLoot.Config.DiagnosticsMode)
                 DuoLog.Debug(
