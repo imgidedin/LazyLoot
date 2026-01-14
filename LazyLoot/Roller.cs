@@ -181,9 +181,9 @@ internal static class Roller
             return RollResult.Passed;
         }
 
-        // Make sure the item is level 1, with ilv of 1 and is an equipment
-        if (LazyLoot.Config.NeverPassGlam && lootItem.Value.LevelEquip == 1 &&
-            lootItem.Value.LevelItem.Value.RowId == 1 && lootItem.Value.EquipSlotCategory.Value.RowId != 0)
+        // Make sure the item is level 1, with ilv of 1 and is equipment
+        if (LazyLoot.Config.NeverPassGlam && lootItem.Value is { LevelEquip: 1, LevelItem.Value.RowId: 1 } &&
+            lootItem.Value.EquipSlotCategory.Value.RowId != 0)
         {
             if (LazyLoot.Config.DiagnosticsMode)
                 DuoLog.Debug(
@@ -191,7 +191,7 @@ internal static class Roller
             return RollResult.Needed;
         }
 
-        if (orchId.Count > 0 && orchId.All(x => IsItemUnlocked(x)))
+        if (orchId.Count > 0 && orchId.All(IsItemUnlocked))
         {
             if (LazyLoot.Config.RestrictionIgnoreItemUnlocked)
             {
