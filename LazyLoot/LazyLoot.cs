@@ -200,7 +200,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         Config.Save();
     }
 
-    private void FulfCommand(string command, string arguments)
+    private static void FulfCommand(string command, string arguments)
     {
         var res = GetResult(arguments);
         if (res.HasValue)
@@ -263,17 +263,17 @@ public class LazyLoot : IDalamudPlugin, IDisposable
             dtrText = "FULF Disabled";
         }
 
-        var isWld = Config is { RestrictionWeeklyLockoutItems: true, WeeklyLockoutDutyActive: true };
+        var isWeeklyLockedDutyActive = Config is { RestrictionWeeklyLockoutItems: true, WeeklyLockoutDutyActive: true };
 
-        if (isWld) dtrText += " (Disabled | WLD)";
+        if (isWeeklyLockedDutyActive) dtrText += " (Disabled | WLD)";
 
         _dtrEntry.Text = new SeString(
             new IconPayload(BitmapFontIcon.Dice),
             new TextPayload(dtrText));
 
-        _dtrEntry.Shown = true;
+        _dtrEntry.Shown = Config.ShowDtrEntry;
 
-        if (isWld) return;
+        if (isWeeklyLockedDutyActive) return;
 
         RollLoot();
     }

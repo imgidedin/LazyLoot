@@ -159,6 +159,11 @@ internal static class Roller
         return null;
     }
 
+    private static bool ShouldPassUnlockable(bool restriction, bool onlyUntradeable, Item? item)
+    {
+        return restriction && (!onlyUntradeable || onlyUntradeable && item!.Value.IsUntradable);
+    }
+
     private static unsafe RollResult GetPlayerRestrictByItemId(uint itemId, bool canNeed)
     {
         var lootItem = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId);
@@ -189,13 +194,11 @@ internal static class Roller
             return RollResult.Needed;
         }
 
-        var passUnlockableBecauseItsUntradeable = !LazyLoot.Config.RestrictionUnlockablesAllowTradeables ||
-                                                  LazyLoot.Config.RestrictionUnlockablesAllowTradeables &&
-                                                  lootItem.Value.IsUntradable;
-
+        // This checks for faded orchestrion rolls and if their actual orchestrion roll is unlocked, by either all or specific selection
         if (orchId.Count > 0 && orchId.All(IsItemUnlocked))
         {
-            if (LazyLoot.Config.RestrictionIgnoreItemUnlocked && passUnlockableBecauseItsUntradeable)
+            if (ShouldPassUnlockable(LazyLoot.Config.RestrictionIgnoreItemUnlocked,
+                    LazyLoot.Config.RestrictionAllUnlockablesOnlyUntradeables, lootItem))
             {
                 if (LazyLoot.Config.DiagnosticsMode)
                     DuoLog.Debug(
@@ -203,8 +206,9 @@ internal static class Roller
                 return RollResult.Passed;
             }
 
-            if ((LazyLoot.Config.RestrictionIgnoreFadedCopy && passUnlockableBecauseItsUntradeable) &&
-                lootItem.Value.FilterGroup == 12 && lootItem.Value.ItemUICategory.RowId == 94)
+            if (ShouldPassUnlockable(LazyLoot.Config.RestrictionIgnoreFadedCopy,
+                    LazyLoot.Config.RestrictionFadedCopyOnlyUntradeables, lootItem) &&
+                lootItem.Value is { FilterGroup: 12, ItemUICategory.RowId: 94 })
             {
                 if (LazyLoot.Config.DiagnosticsMode)
                     DuoLog.Debug(
@@ -215,7 +219,8 @@ internal static class Roller
 
         if (IsItemUnlocked(itemId))
         {
-            if (LazyLoot.Config.RestrictionIgnoreItemUnlocked && passUnlockableBecauseItsUntradeable)
+            if (ShouldPassUnlockable(LazyLoot.Config.RestrictionIgnoreItemUnlocked,
+                    LazyLoot.Config.RestrictionAllUnlockablesOnlyUntradeables, lootItem))
             {
                 if (LazyLoot.Config.DiagnosticsMode)
                     DuoLog.Debug(
@@ -223,7 +228,8 @@ internal static class Roller
                 return RollResult.Passed;
             }
 
-            if ((LazyLoot.Config.RestrictionIgnoreMounts && passUnlockableBecauseItsUntradeable) &&
+            if (ShouldPassUnlockable(LazyLoot.Config.RestrictionIgnoreMounts,
+                    LazyLoot.Config.RestrictionMountsOnlyUntradeables, lootItem) &&
                 lootItem.Value.ItemAction.Value.Action.Value.RowId == 1322)
             {
                 if (LazyLoot.Config.DiagnosticsMode)
@@ -232,7 +238,8 @@ internal static class Roller
                 return RollResult.Passed;
             }
 
-            if ((LazyLoot.Config.RestrictionIgnoreMinions && passUnlockableBecauseItsUntradeable) &&
+            if (ShouldPassUnlockable(LazyLoot.Config.RestrictionIgnoreMinions,
+                    LazyLoot.Config.RestrictionMinionsOnlyUntradeables, lootItem) &&
                 lootItem.Value.ItemAction.Value.Action.Value.RowId == 853)
             {
                 if (LazyLoot.Config.DiagnosticsMode)
@@ -241,7 +248,8 @@ internal static class Roller
                 return RollResult.Passed;
             }
 
-            if ((LazyLoot.Config.RestrictionIgnoreBardings && passUnlockableBecauseItsUntradeable) &&
+            if (ShouldPassUnlockable(LazyLoot.Config.RestrictionIgnoreBardings,
+                    LazyLoot.Config.RestrictionBardingsOnlyUntradeables, lootItem) &&
                 lootItem.Value.ItemAction.Value.Action.Value.RowId == 1013)
             {
                 if (LazyLoot.Config.DiagnosticsMode)
@@ -250,7 +258,8 @@ internal static class Roller
                 return RollResult.Passed;
             }
 
-            if ((LazyLoot.Config.RestrictionIgnoreEmoteHairstyle && passUnlockableBecauseItsUntradeable) &&
+            if (ShouldPassUnlockable(LazyLoot.Config.RestrictionIgnoreEmoteHairstyle,
+                    LazyLoot.Config.RestrictionEmoteHairstyleOnlyUntradeables, lootItem) &&
                 lootItem.Value.ItemAction.Value.Action.Value.RowId == 2633)
             {
                 if (LazyLoot.Config.DiagnosticsMode)
@@ -259,7 +268,8 @@ internal static class Roller
                 return RollResult.Passed;
             }
 
-            if ((LazyLoot.Config.RestrictionIgnoreTripleTriadCards && passUnlockableBecauseItsUntradeable) &&
+            if (ShouldPassUnlockable(LazyLoot.Config.RestrictionIgnoreTripleTriadCards,
+                    LazyLoot.Config.RestrictionTripleTriadCardsOnlyUntradeables, lootItem) &&
                 lootItem.Value.ItemAction.Value.Action.Value.RowId == 3357)
             {
                 if (LazyLoot.Config.DiagnosticsMode)
@@ -268,7 +278,8 @@ internal static class Roller
                 return RollResult.Passed;
             }
 
-            if ((LazyLoot.Config.RestrictionIgnoreOrchestrionRolls && passUnlockableBecauseItsUntradeable) &&
+            if (ShouldPassUnlockable(LazyLoot.Config.RestrictionIgnoreOrchestrionRolls,
+                    LazyLoot.Config.RestrictionOrchestrionRollsOnlyUntradeables, lootItem) &&
                 lootItem.Value.ItemAction.Value.Action.Value.RowId == 25183)
             {
                 if (LazyLoot.Config.DiagnosticsMode)
@@ -279,6 +290,7 @@ internal static class Roller
         }
 
         if (LazyLoot.Config.RestrictionSeals)
+        {
             if (lootItem.Value is { Rarity: > 1, PriceLow: > 0, ClassJobCategory.RowId: > 0 })
             {
                 var gcSealValue = Svc.Data.Excel.GetSheet<GCSupplyDutyReward>()?.GetRow(lootItem.Value.LevelItem.RowId)
@@ -292,10 +304,12 @@ internal static class Roller
                     return RollResult.Passed;
                 }
             }
+        }
 
         if (lootItem.Value.EquipSlotCategory.RowId != 0)
         {
             if (LazyLoot.Config.RestrictionLootLowerThanJobIlvl && canNeed)
+            {
                 if (lootItem.Value.LevelItem.RowId <
                     Utils.GetPlayerIlevel() - LazyLoot.Config.RestrictionLootLowerThanJobIlvlTreshold)
                 {
@@ -307,6 +321,7 @@ internal static class Roller
                             $@"{lootItem.Value.Name} has been passed due to its iLvl being lower than your your current Job (Your: {Utils.GetPlayerIlevel()} | Item: {lootItem.Value.LevelItem.RowId} ) [Pass Item Level Job]");
                     return toReturn;
                 }
+            }
 
             if (LazyLoot.Config.RestrictionIgnoreItemLevelBelow
                 && lootItem.Value.LevelItem.RowId < LazyLoot.Config.RestrictionIgnoreItemLevelBelowValue)

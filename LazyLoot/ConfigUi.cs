@@ -143,6 +143,24 @@ public class ConfigUi : Window, IDisposable
                 }
             }
         }
+
+        // This is here in case we ever need to debug faded copies again.
+        // Please do not delete <3
+
+        //if (ImGui.Button("Faded Copy Converter Check?"))
+        //{
+        //    Roller.UpdateFadedCopy((uint)debugValue, out uint nonfaded);
+        //    Svc.Log.Debug($"Non-Faded is {nonfaded}");\
+        //}
+
+        //if (ImGui.Button("Check all Faded Copies"))
+        //{
+        //    foreach (var i in Svc.Data.GetExcelSheet<Item>().Where(x => x.FilterGroup == 12 && x.ItemUICategory.Row == 94))
+        //    {
+        //        Roller.UpdateFadedCopy((uint)i.RowId, out uint nonfaded);
+        //        Svc.Log.Debug($"{i.Name}");
+        //    }
+        //}
     }
 
     private void DrawDiagnostics()
@@ -203,6 +221,17 @@ public class ConfigUi : Window, IDisposable
         }
     }
 
+    private static void DrawOnlyTradeableCheckbox(ref bool parentRestriction, ref bool thisRestriction)
+    {
+        if (!parentRestriction) return;
+
+        ImGui.Indent(20f);
+        ImGui.Checkbox(
+            "Only Untradeables",
+            ref thisRestriction);
+        ImGui.Unindent(20f);
+    }
+
     private static void DrawUserRestrictionEverywhere()
     {
         ImGui.Text("Settings in this page will apply to every single item, even if they are tradeable or not.");
@@ -223,20 +252,55 @@ public class ConfigUi : Window, IDisposable
         if (!LazyLoot.Config.RestrictionIgnoreItemUnlocked)
         {
             ImGui.Checkbox("Pass on unlocked Mounts.", ref LazyLoot.Config.RestrictionIgnoreMounts);
+            DrawOnlyTradeableCheckbox(
+                ref LazyLoot.Config.RestrictionIgnoreMounts,
+                ref LazyLoot.Config.RestrictionMountsOnlyUntradeables
+            );
+
             ImGui.Checkbox("Pass on unlocked Minions.", ref LazyLoot.Config.RestrictionIgnoreMinions);
+            DrawOnlyTradeableCheckbox(
+                ref LazyLoot.Config.RestrictionIgnoreMinions,
+                ref LazyLoot.Config.RestrictionMinionsOnlyUntradeables
+            );
+
             ImGui.Checkbox("Pass on unlocked Bardings.", ref LazyLoot.Config.RestrictionIgnoreBardings);
+            DrawOnlyTradeableCheckbox(
+                ref LazyLoot.Config.RestrictionIgnoreBardings,
+                ref LazyLoot.Config.RestrictionBardingsOnlyUntradeables
+            );
+
             ImGui.Checkbox("Pass on unlocked Triple Triad cards.",
                 ref LazyLoot.Config.RestrictionIgnoreTripleTriadCards);
+            DrawOnlyTradeableCheckbox(
+                ref LazyLoot.Config.RestrictionIgnoreTripleTriadCards,
+                ref LazyLoot.Config.RestrictionTripleTriadCardsOnlyUntradeables
+            );
+
             ImGui.Checkbox("Pass on unlocked Emotes and Hairstyle.",
                 ref LazyLoot.Config.RestrictionIgnoreEmoteHairstyle);
+            DrawOnlyTradeableCheckbox(
+                ref LazyLoot.Config.RestrictionIgnoreEmoteHairstyle,
+                ref LazyLoot.Config.RestrictionEmoteHairstyleOnlyUntradeables
+            );
+
             ImGui.Checkbox("Pass on unlocked Orchestrion Rolls.",
                 ref LazyLoot.Config.RestrictionIgnoreOrchestrionRolls);
+            DrawOnlyTradeableCheckbox(
+                ref LazyLoot.Config.RestrictionIgnoreOrchestrionRolls,
+                ref LazyLoot.Config.RestrictionOrchestrionRollsOnlyUntradeables
+            );
+
             ImGui.Checkbox("Pass on unlocked Faded Copies.", ref LazyLoot.Config.RestrictionIgnoreFadedCopy);
+            DrawOnlyTradeableCheckbox(
+                ref LazyLoot.Config.RestrictionIgnoreFadedCopy,
+                ref LazyLoot.Config.RestrictionFadedCopyOnlyUntradeables
+            );
         }
 
-        ImGui.Checkbox(
-            "For the above settings (Unlockables), check this option if you want to apply them ONLY for items that can't be sold/traded.",
-            ref LazyLoot.Config.RestrictionUnlockablesAllowTradeables);
+        DrawOnlyTradeableCheckbox(
+            ref LazyLoot.Config.RestrictionIgnoreItemUnlocked,
+            ref LazyLoot.Config.RestrictionAllUnlockablesOnlyUntradeables
+        );
 
         ImGui.Checkbox("Pass on items I can't use with current job.",
             ref LazyLoot.Config.RestrictionOtherJobItems);
@@ -843,40 +907,13 @@ public class ConfigUi : Window, IDisposable
     {
         ImGui.Spacing();
         ImGui.Text("Server Info Bar (DTR)");
-        try
-        {
-            var config = DalamudReflector.GetService("Dalamud.Configuration.Internal.DalamudConfiguration");
-            var dtrIgnore = config.GetFoP<List<string>>("DtrIgnore");
-            var internalName = Svc.PluginInterface.InternalName;
-            var enabled = !dtrIgnore.Contains(internalName);
-            if (ImGui.Checkbox("###LazyLootDtrEnabled", ref enabled))
-            {
-                if (enabled)
-                {
-                    dtrIgnore.Remove(internalName);
-                }
-                else
-                {
-                    if (!dtrIgnore.Contains(internalName))
-                        dtrIgnore.Add(internalName);
-                }
-
-                config.Call("QueueSave", Array.Empty<object>());
-            }
-
-            ImGui.SameLine();
-            ImGui.TextColored(
-                enabled ? ImGuiColors.HealerGreen : ImGuiColors.DalamudRed,
-                enabled ? "DTR Enabled" : "DTR Disabled"
-            );
-
-            ImGui.TextWrapped("Show/hide LazyLoot in the Dalamud Server Info Bar (DTR).");
-        }
-        catch (Exception e)
-        {
-            ImGui.TextColored(ImGuiColors.DalamudRed, "Failed to access Dalamud DTR settings.");
-            ImGui.TextWrapped(e.ToString());
-        }
+        ImGui.Checkbox("###LazyLootDtrEnabled", ref LazyLoot.Config.ShowDtrEntry);
+        ImGui.SameLine();
+        ImGui.TextColored(
+            LazyLoot.Config.ShowDtrEntry ? ImGuiColors.HealerGreen : ImGuiColors.DalamudRed,
+            LazyLoot.Config.ShowDtrEntry ? "DTR Enabled" : "DTR Disabled"
+        );
+        ImGui.TextWrapped("Show/hide LazyLoot in the Dalamud Server Info Bar (DTR).");
     }
 
     private void DrawFulf()

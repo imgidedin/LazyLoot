@@ -23,6 +23,7 @@ namespace LazyLoot
     public class Configuration : IPluginConfiguration
     {
         public bool FulfEnabled = false;
+        public bool ShowDtrEntry = true;
 
         // Output
         public bool EnableChatLogMessage = true;
@@ -45,22 +46,36 @@ namespace LazyLoot
         public int RestrictionIgnoreItemLevelBelowValue = 0;
         // AllItems
         public bool RestrictionIgnoreItemUnlocked = false;
+        // AllItems - Only Untradeables
+        public bool RestrictionAllUnlockablesOnlyUntradeables = false;
         // Mounts        
         public bool RestrictionIgnoreMounts = false;
-        // Minnions
+        // Mounts - Only Untradeables
+        public bool RestrictionMountsOnlyUntradeables = false;
+        // Minions
         public bool RestrictionIgnoreMinions = false;
+        // Minions - Only Untradeables
+        public bool RestrictionMinionsOnlyUntradeables = false;
         // Bardings
         public bool RestrictionIgnoreBardings = false;
+        // Bardings - Only Untradeables
+        public bool RestrictionBardingsOnlyUntradeables = false;
         // TripleTriadCards
         public bool RestrictionIgnoreTripleTriadCards = false;
+        // TripleTriadCards - Only Untradeables
+        public bool RestrictionTripleTriadCardsOnlyUntradeables = false;
         // Emote/Hairstyle
         public bool RestrictionIgnoreEmoteHairstyle = false;
+        // Emote/Hairstyle - Only Untradeables
+        public bool RestrictionEmoteHairstyleOnlyUntradeables = false;
         // OrchestrionRolls
         public bool RestrictionIgnoreOrchestrionRolls = false;
+        // OrchestrionRolls - Only Untradeables
+        public bool RestrictionOrchestrionRollsOnlyUntradeables = false;
         // FadedCopy
         public bool RestrictionIgnoreFadedCopy = false;
-        // UnlockablesAllowTradeables
-        public bool RestrictionUnlockablesAllowTradeables = false;
+        // FadedCopy - Only Untradeables
+        public bool RestrictionFadedCopyOnlyUntradeables = false;
         // Items that can't use with actual class
         public bool RestrictionOtherJobItems = false;
         // Weekly lockout items
