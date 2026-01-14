@@ -235,7 +235,7 @@ public class ConfigUi : Window, IDisposable
 
     private static void DrawUserRestrictionEverywhere()
     {
-        ImGui.Text("Settings in this page will apply to every single item, even if they are tradeable or not.");
+        ImGui.TextWrapped("Settings in this page will apply to every single item, even if they are tradeable or not.");
         ImGui.Separator();
         ImGui.Checkbox("Pass on items with an item level below",
             ref LazyLoot.Config.RestrictionIgnoreItemLevelBelow);
@@ -246,10 +246,10 @@ public class ConfigUi : Window, IDisposable
         if (LazyLoot.Config.RestrictionIgnoreItemLevelBelowValue < 0)
             LazyLoot.Config.RestrictionIgnoreItemLevelBelowValue = 0;
 
-        ImGui.Checkbox(
+        Utils.CheckboxTextWrapped(
             "Pass on all items already unlocked. (Triple Triad Cards, Orchestrions, Faded Copies, Minions, Mounts, Emotes, Hairstyles)",
             ref LazyLoot.Config.RestrictionIgnoreItemUnlocked);
-
+        
         if (!LazyLoot.Config.RestrictionIgnoreItemUnlocked)
         {
             ImGui.Checkbox("Pass on unlocked Mounts.", ref LazyLoot.Config.RestrictionIgnoreMounts);
@@ -361,7 +361,7 @@ public class ConfigUi : Window, IDisposable
 
         ImGui.Checkbox("###NeverPassGlam", ref LazyLoot.Config.NeverPassGlam);
         ImGui.SameLine();
-        ImGui.Text("Never pass on glamour items (Items that have an item and iLvl of 1)");
+        ImGui.TextWrapped("Never pass on glamour items (Items that have an item and iLvl of 1)");
     }
 
     private static void CenterText()
