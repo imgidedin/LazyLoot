@@ -234,6 +234,10 @@ public class ConfigUi : Window, IDisposable
             ImGui.Checkbox("Pass on unlocked Faded Copies.", ref LazyLoot.Config.RestrictionIgnoreFadedCopy);
         }
 
+        ImGui.Checkbox(
+            "For the above settings (Unlockables), check this option if you want to apply them ONLY for items that can't be sold/traded.",
+            ref LazyLoot.Config.RestrictionUnlockablesAllowTradeables);
+
         ImGui.Checkbox("Pass on items I can't use with current job.",
             ref LazyLoot.Config.RestrictionOtherJobItems);
 
@@ -281,7 +285,7 @@ public class ConfigUi : Window, IDisposable
         ImGui.Text($"(item level {Roller.ConvertSealsToIlvl(LazyLoot.Config.RestrictionSealsAmnt)} and below)");
         ImGuiComponents.HelpMarker(
             "This setting will only apply to gear able to be turned in for expert delivery.");
-        
+
         ImGui.Checkbox("###NeverPassGlam", ref LazyLoot.Config.NeverPassGlam);
         ImGui.SameLine();
         ImGui.Text("Never pass on glamour items (Items that have an item and iLvl of 1)");
@@ -440,6 +444,7 @@ public class ConfigUi : Window, IDisposable
             {
                 ImGui.CloseCurrentPopup();
             }
+
             ImGui.Text("Are you sure you want to replace your current item restrictions configuration?");
             ImGuiEx.LineCentered(() => ImGuiEx.TextUnderlined("This action cannot be undone."));
             ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(40 / 255f, 167 / 255f, 69 / 255f, 1.0f));
@@ -532,6 +537,7 @@ public class ConfigUi : Window, IDisposable
             bail = true;
             Notify.Error($"Imported restriction contains invalid item ID: {item.Id}. Import cancelled.");
         }
+
         if (bail)
         {
             ImGui.CloseCurrentPopup();
@@ -549,6 +555,7 @@ public class ConfigUi : Window, IDisposable
             Notify.Error("Nothing to import on your clipboard");
             return false;
         }
+
         try
         {
             var result = JsonSerializer.Deserialize<List<CustomRestriction>>(clipboardText);
@@ -708,6 +715,7 @@ public class ConfigUi : Window, IDisposable
             {
                 ImGui.CloseCurrentPopup();
             }
+
             ImGui.Text("Are you sure you want to replace your current duty restrictions configuration?");
             ImGuiEx.LineCentered(() => ImGuiEx.TextUnderlined("This action cannot be undone."));
             ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(40 / 255f, 167 / 255f, 69 / 255f, 1.0f));
@@ -852,6 +860,7 @@ public class ConfigUi : Window, IDisposable
                     if (!dtrIgnore.Contains(internalName))
                         dtrIgnore.Add(internalName);
                 }
+
                 config.Call("QueueSave", Array.Empty<object>());
             }
 
@@ -869,7 +878,7 @@ public class ConfigUi : Window, IDisposable
             ImGui.TextWrapped(e.ToString());
         }
     }
-    
+
     private void DrawFulf()
     {
         ImGuiEx.LineCentered("FULFLabel", () => ImGuiEx.TextUnderlined("Fancy Ultimate Lazy Feature"));

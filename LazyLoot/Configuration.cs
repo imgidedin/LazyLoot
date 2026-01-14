@@ -59,7 +59,9 @@ namespace LazyLoot
         public bool RestrictionIgnoreOrchestrionRolls = false;
         // FadedCopy
         public bool RestrictionIgnoreFadedCopy = false;
-        // Items i can't use with actuall class
+        // UnlockablesAllowTradeables
+        public bool RestrictionUnlockablesAllowTradeables = false;
+        // Items that can't use with actual class
         public bool RestrictionOtherJobItems = false;
         // Weekly lockout items
         public bool RestrictionWeeklyLockoutItems = false;

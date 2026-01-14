@@ -167,9 +167,7 @@ internal static class Roller
 
         if (lootItem == null)
         {
-            if (LazyLoot.Config.DiagnosticsMode)
-                DuoLog.Debug(
-                    $"Passing due to unknown item? Please give this ID to the developers: {itemId} [Unknown ID]");
+            DuoLog.Debug($"Passing due to unknown item? Please give this ID to the developers: {itemId} [Unknown ID]");
             return RollResult.Passed;
         }
 
@@ -191,9 +189,13 @@ internal static class Roller
             return RollResult.Needed;
         }
 
+        var passUnlockableBecauseItsUntradeable = !LazyLoot.Config.RestrictionUnlockablesAllowTradeables ||
+                                                  LazyLoot.Config.RestrictionUnlockablesAllowTradeables &&
+                                                  lootItem.Value.IsUntradable;
+
         if (orchId.Count > 0 && orchId.All(IsItemUnlocked))
         {
-            if (LazyLoot.Config.RestrictionIgnoreItemUnlocked)
+            if (LazyLoot.Config.RestrictionIgnoreItemUnlocked && passUnlockableBecauseItsUntradeable)
             {
                 if (LazyLoot.Config.DiagnosticsMode)
                     DuoLog.Debug(
@@ -201,8 +203,8 @@ internal static class Roller
                 return RollResult.Passed;
             }
 
-            if (LazyLoot.Config.RestrictionIgnoreFadedCopy
-                && lootItem.Value.FilterGroup == 12 && lootItem.Value.ItemUICategory.RowId == 94)
+            if ((LazyLoot.Config.RestrictionIgnoreFadedCopy && passUnlockableBecauseItsUntradeable) &&
+                lootItem.Value.FilterGroup == 12 && lootItem.Value.ItemUICategory.RowId == 94)
             {
                 if (LazyLoot.Config.DiagnosticsMode)
                     DuoLog.Debug(
@@ -213,7 +215,7 @@ internal static class Roller
 
         if (IsItemUnlocked(itemId))
         {
-            if (LazyLoot.Config.RestrictionIgnoreItemUnlocked)
+            if (LazyLoot.Config.RestrictionIgnoreItemUnlocked && passUnlockableBecauseItsUntradeable)
             {
                 if (LazyLoot.Config.DiagnosticsMode)
                     DuoLog.Debug(
@@ -221,7 +223,8 @@ internal static class Roller
                 return RollResult.Passed;
             }
 
-            if (LazyLoot.Config.RestrictionIgnoreMounts && lootItem.Value.ItemAction.Value.Action.Value.RowId == 1322)
+            if ((LazyLoot.Config.RestrictionIgnoreMounts && passUnlockableBecauseItsUntradeable) &&
+                lootItem.Value.ItemAction.Value.Action.Value.RowId == 1322)
             {
                 if (LazyLoot.Config.DiagnosticsMode)
                     DuoLog.Debug(
@@ -229,7 +232,8 @@ internal static class Roller
                 return RollResult.Passed;
             }
 
-            if (LazyLoot.Config.RestrictionIgnoreMinions && lootItem.Value.ItemAction.Value.Action.Value.RowId == 853)
+            if ((LazyLoot.Config.RestrictionIgnoreMinions && passUnlockableBecauseItsUntradeable) &&
+                lootItem.Value.ItemAction.Value.Action.Value.RowId == 853)
             {
                 if (LazyLoot.Config.DiagnosticsMode)
                     DuoLog.Debug(
@@ -237,7 +241,8 @@ internal static class Roller
                 return RollResult.Passed;
             }
 
-            if (LazyLoot.Config.RestrictionIgnoreBardings && lootItem.Value.ItemAction.Value.Action.Value.RowId == 1013)
+            if ((LazyLoot.Config.RestrictionIgnoreBardings && passUnlockableBecauseItsUntradeable) &&
+                lootItem.Value.ItemAction.Value.Action.Value.RowId == 1013)
             {
                 if (LazyLoot.Config.DiagnosticsMode)
                     DuoLog.Debug(
@@ -245,7 +250,7 @@ internal static class Roller
                 return RollResult.Passed;
             }
 
-            if (LazyLoot.Config.RestrictionIgnoreEmoteHairstyle &&
+            if ((LazyLoot.Config.RestrictionIgnoreEmoteHairstyle && passUnlockableBecauseItsUntradeable) &&
                 lootItem.Value.ItemAction.Value.Action.Value.RowId == 2633)
             {
                 if (LazyLoot.Config.DiagnosticsMode)
@@ -254,7 +259,7 @@ internal static class Roller
                 return RollResult.Passed;
             }
 
-            if (LazyLoot.Config.RestrictionIgnoreTripleTriadCards &&
+            if ((LazyLoot.Config.RestrictionIgnoreTripleTriadCards && passUnlockableBecauseItsUntradeable) &&
                 lootItem.Value.ItemAction.Value.Action.Value.RowId == 3357)
             {
                 if (LazyLoot.Config.DiagnosticsMode)
@@ -263,7 +268,7 @@ internal static class Roller
                 return RollResult.Passed;
             }
 
-            if (LazyLoot.Config.RestrictionIgnoreOrchestrionRolls &&
+            if ((LazyLoot.Config.RestrictionIgnoreOrchestrionRolls && passUnlockableBecauseItsUntradeable) &&
                 lootItem.Value.ItemAction.Value.Action.Value.RowId == 25183)
             {
                 if (LazyLoot.Config.DiagnosticsMode)
