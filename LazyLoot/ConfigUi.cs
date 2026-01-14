@@ -32,6 +32,8 @@ public class ConfigUi : Window, IDisposable
 
     internal WindowSystem windowSystem = new();
 
+    private static bool focusItemSearchOnOpen;
+
     [StructLayout(LayoutKind.Explicit, Size = 0x40)]
     public struct DebugLootItem
     {
@@ -249,7 +251,7 @@ public class ConfigUi : Window, IDisposable
         Utils.CheckboxTextWrapped(
             "Pass on all items already unlocked. (Triple Triad Cards, Orchestrions, Faded Copies, Minions, Mounts, Emotes, Hairstyles)",
             ref LazyLoot.Config.RestrictionIgnoreItemUnlocked);
-        
+
         if (!LazyLoot.Config.RestrictionIgnoreItemUnlocked)
         {
             ImGui.Checkbox("Pass on unlocked Mounts.", ref LazyLoot.Config.RestrictionIgnoreMounts);
@@ -386,92 +388,120 @@ public class ConfigUi : Window, IDisposable
 
     private static void DrawUserRestrictionItems()
     {
+        ImGui.Dummy(new Vector2(0, 6));
         ImGuiEx.LineCentered("ItemRestrictionWarning",
-            () => ImGui.TextColored(ImGuiColors.DalamudYellow, "These rules override any other restriction settings"));
-        ImGui.Separator();
-
-        if (ImGui.BeginTable("UserRestrictionItemsTable", 8, ImGuiTableFlags.Borders))
-        {
-            ImGui.TableSetupColumn("Enabled", ImGuiTableColumnFlags.WidthFixed, 50f);
-            ImGui.TableSetupColumn("Icon", ImGuiTableColumnFlags.WidthFixed, 32f);
-            ImGui.TableSetupColumn("Name", ImGuiTableColumnFlags.WidthStretch);
-            ImGui.TableSetupColumn("Need", ImGuiTableColumnFlags.WidthFixed, 50f);
-            ImGui.TableSetupColumn("Greed", ImGuiTableColumnFlags.WidthFixed, 50f);
-            ImGui.TableSetupColumn("Pass", ImGuiTableColumnFlags.WidthFixed, 50f);
-            ImGui.TableSetupColumn("Nothing", ImGuiTableColumnFlags.WidthFixed, 50f);
-            ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 60f);
-            ImGui.TableHeadersRow();
-
-            for (var i = 0; i < LazyLoot.Config.Restrictions.Items.Count; i++)
+            () =>
             {
-                var item = LazyLoot.Config.Restrictions.Items[i];
-                var restrictedItem = Svc.Data.GetExcelSheet<Item>().GetRow(item.Id);
-                ImGui.TableNextRow();
-                ImGui.TableNextColumn();
-                var enabled = item.Enabled;
-                CenterText();
-                if (ImGui.Checkbox($"##{item.Id}", ref enabled))
-                {
-                    item.Enabled = enabled;
-                    LazyLoot.Config.Save();
-                }
+                ImGui.PushStyleColor(ImGuiCol.Text, ImGuiColors.DalamudYellow);
+                ImGui.TextWrapped("These rules override any other restriction settings, but the weekly lockout.");
+                ImGui.PopStyleColor();
+            });
+        ImGui.Dummy(new Vector2(0, 6));
+        ImGui.Separator();
+        ImGui.Dummy(new Vector2(0, 6));
+        
+        var items = LazyLoot.Config.Restrictions.Items;
 
-                ImGui.TableNextColumn();
-                CenterText();
-
-                var icon = GetItemIcon(restrictedItem.Icon);
-                if (icon != null)
-                    ImGui.Image(icon.Handle, new Vector2(24, 24));
-                else
-                    ImGui.Text("-");
-
-                ImGui.TableNextColumn();
-                ImGui.Text(restrictedItem.Name.ToString());
-                if (ImGui.IsItemHovered())
-                    ImGui.SetTooltip(restrictedItem.Name.ToString());
-
-                ImGui.TableNextColumn();
-                CenterText();
-                if (ImGui.RadioButton($"##need{item.Id}", item.RollRule == RollResult.Needed))
-                {
-                    item.RollRule = RollResult.Needed;
-                    LazyLoot.Config.Save();
-                }
-
-                ImGui.TableNextColumn();
-                CenterText();
-                if (ImGui.RadioButton($"##greed{item.Id}", item.RollRule == RollResult.Greeded))
-                {
-                    item.RollRule = RollResult.Greeded;
-                    LazyLoot.Config.Save();
-                }
-
-                ImGui.TableNextColumn();
-                CenterText();
-                if (ImGui.RadioButton($"##pass{item.Id}", item.RollRule == RollResult.Passed))
-                {
-                    item.RollRule = RollResult.Passed;
-                    LazyLoot.Config.Save();
-                }
-
-                ImGui.TableNextColumn();
-                CenterText();
-                if (ImGui.RadioButton($"##doNothing{item.Id}", item.RollRule == RollResult.UnAwarded))
-                {
-                    item.RollRule = RollResult.UnAwarded;
-                    LazyLoot.Config.Save();
-                }
-
-                ImGui.TableNextColumn();
-                if (ImGui.Button($"Remove##{item.Id}"))
-                {
-                    LazyLoot.Config.Restrictions.Items.RemoveAt(i);
-                    LazyLoot.Config.Save();
-                    break;
-                }
+        if (items.Count == 0)
+        {
+            ImGui.Dummy(new Vector2(0, 6));
+            ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(14, 12));
+            if (ImGui.BeginChild("##UserRestrictionEmptyState", new Vector2(-1, 60), true,
+                    ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
+            {
+                ImGuiEx.TextCentered("No items added.");
+                ImGuiEx.TextCentered("Click the Add item below to start adding items.");
+                ImGui.EndChild();
             }
 
-            ImGui.EndTable();
+            ImGui.PopStyleVar();
+            ImGui.Dummy(new Vector2(0, 6));
+        }
+        else
+        {
+            if (ImGui.BeginTable("UserRestrictionItemsTable", 8, ImGuiTableFlags.Borders))
+            {
+                ImGui.TableSetupColumn("Enabled", ImGuiTableColumnFlags.WidthFixed, 50f);
+                ImGui.TableSetupColumn("Icon", ImGuiTableColumnFlags.WidthFixed, 32f);
+                ImGui.TableSetupColumn("Name", ImGuiTableColumnFlags.WidthStretch);
+                ImGui.TableSetupColumn("Need", ImGuiTableColumnFlags.WidthFixed, 50f);
+                ImGui.TableSetupColumn("Greed", ImGuiTableColumnFlags.WidthFixed, 50f);
+                ImGui.TableSetupColumn("Pass", ImGuiTableColumnFlags.WidthFixed, 50f);
+                ImGui.TableSetupColumn("Nothing", ImGuiTableColumnFlags.WidthFixed, 50f);
+                ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 60f);
+                ImGui.TableHeadersRow();
+
+                for (var i = 0; i < items.Count; i++)
+                {
+                    var item = items[i];
+                    var restrictedItem = Svc.Data.GetExcelSheet<Item>().GetRow(item.Id);
+                    ImGui.TableNextRow();
+                    ImGui.TableNextColumn();
+                    var enabled = item.Enabled;
+                    CenterText();
+                    if (ImGui.Checkbox($"##{item.Id}", ref enabled))
+                    {
+                        item.Enabled = enabled;
+                        LazyLoot.Config.Save();
+                    }
+
+                    ImGui.TableNextColumn();
+                    CenterText();
+
+                    var icon = GetItemIcon(restrictedItem.Icon);
+                    if (icon != null)
+                        ImGui.Image(icon.Handle, new Vector2(24, 24));
+                    else
+                        ImGui.Text("-");
+
+                    ImGui.TableNextColumn();
+                    ImGui.Text(restrictedItem.Name.ToString());
+                    if (ImGui.IsItemHovered())
+                        ImGui.SetTooltip(restrictedItem.Name.ToString());
+
+                    ImGui.TableNextColumn();
+                    CenterText();
+                    if (ImGui.RadioButton($"##need{item.Id}", item.RollRule == RollResult.Needed))
+                    {
+                        item.RollRule = RollResult.Needed;
+                        LazyLoot.Config.Save();
+                    }
+
+                    ImGui.TableNextColumn();
+                    CenterText();
+                    if (ImGui.RadioButton($"##greed{item.Id}", item.RollRule == RollResult.Greeded))
+                    {
+                        item.RollRule = RollResult.Greeded;
+                        LazyLoot.Config.Save();
+                    }
+
+                    ImGui.TableNextColumn();
+                    CenterText();
+                    if (ImGui.RadioButton($"##pass{item.Id}", item.RollRule == RollResult.Passed))
+                    {
+                        item.RollRule = RollResult.Passed;
+                        LazyLoot.Config.Save();
+                    }
+
+                    ImGui.TableNextColumn();
+                    CenterText();
+                    if (ImGui.RadioButton($"##doNothing{item.Id}", item.RollRule == RollResult.UnAwarded))
+                    {
+                        item.RollRule = RollResult.UnAwarded;
+                        LazyLoot.Config.Save();
+                    }
+
+                    ImGui.TableNextColumn();
+                    if (ImGui.Button($"Remove##{item.Id}"))
+                    {
+                        LazyLoot.Config.Restrictions.Items.RemoveAt(i);
+                        LazyLoot.Config.Save();
+                        break;
+                    }
+                }
+
+                ImGui.EndTable();
+            }
         }
 
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(2, 0));
@@ -503,6 +533,7 @@ public class ConfigUi : Window, IDisposable
         if (ImGui.Button("Add Item", new Vector2(-1, 0)))
         {
             searchResultsQuery = "";
+            focusItemSearchOnOpen = true;
             ImGui.OpenPopup("item_search_add");
         }
 
@@ -570,6 +601,12 @@ public class ConfigUi : Window, IDisposable
             var maxWidth = Math.Max(300f, itemSearchResults.Select(item =>
                 ImGui.CalcTextSize($"{item.Name} (ID: {item.RowId})").X).DefaultIfEmpty(200f).Max() + 30);
             ImGui.SetNextItemWidth(maxWidth);
+            if (focusItemSearchOnOpen)
+            {
+                ImGui.SetKeyboardFocusHere();
+                focusItemSearchOnOpen = false;
+            }
+
             ImGui.InputText("##itemSearch", ref searchResultsQuery, 100);
             if (!string.IsNullOrEmpty(searchResultsQuery))
                 if (ImGui.BeginChild("itemSearchResults", new Vector2(maxWidth, 200), true))
@@ -649,100 +686,122 @@ public class ConfigUi : Window, IDisposable
 
     private static void DrawUserRestrictionDuties()
     {
-        ImGuiEx.LineCentered("ItemRestrictionWarning",
+        
+        ImGui.Dummy(new Vector2(0, 6));
+        ImGuiEx.LineCentered("DutyRestrictionWarning",
             () =>
             {
-                var width = ImGui.GetWindowWidth() - 30;
-                ImGui.PushTextWrapPos(width);
-                ImGui.TextColored(ImGuiColors.DalamudYellow,
-                    "These rules override the main restriction settings, but is overriden by the item restriction settings if they happen to collide.");
-                ImGui.PopTextWrapPos();
+                ImGui.PushStyleColor(ImGuiCol.Text, ImGuiColors.DalamudYellow);
+                ImGui.TextWrapped("These rules override the main restriction settings, but is overriden by the item restriction settings if they happen to collide.");
+                ImGui.PopStyleColor();
             });
+        ImGui.Dummy(new Vector2(0, 6));
         ImGui.Separator();
+        ImGui.Dummy(new Vector2(0, 6));
 
-        if (ImGui.BeginTable("UserRestrictionDutiesTable", 8, ImGuiTableFlags.Borders))
+        var duties = LazyLoot.Config.Restrictions.Duties;
+
+        if (duties.Count == 0)
         {
-            ImGui.TableSetupColumn("Enabled", ImGuiTableColumnFlags.WidthFixed, 50f);
-            ImGui.TableSetupColumn("Type", ImGuiTableColumnFlags.WidthFixed, 32f);
-            ImGui.TableSetupColumn("Name", ImGuiTableColumnFlags.WidthStretch);
-            ImGui.TableSetupColumn("Need", ImGuiTableColumnFlags.WidthFixed, 50f);
-            ImGui.TableSetupColumn("Greed", ImGuiTableColumnFlags.WidthFixed, 50f);
-            ImGui.TableSetupColumn("Pass", ImGuiTableColumnFlags.WidthFixed, 50f);
-            ImGui.TableSetupColumn("Nothing", ImGuiTableColumnFlags.WidthFixed, 50f);
-            ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 60f);
-            ImGui.TableHeadersRow();
-
-            for (var i = 0; i < LazyLoot.Config.Restrictions.Duties.Count; i++)
+            ImGui.Dummy(new Vector2(0, 6));
+            ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(14, 12));
+            if (ImGui.BeginChild("##UserRestrictionDutyEmptyState", new Vector2(-1, 60), true,
+                    ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
             {
-                var duty = LazyLoot.Config.Restrictions.Duties[i];
-                var restrictedDuty = Svc.Data.GetExcelSheet<ContentFinderCondition>().GetRow(duty.Id);
-                var enabled = duty.Enabled;
-                ImGui.TableNextRow();
-                ImGui.TableNextColumn();
-                CenterText();
-                if (ImGui.Checkbox($"##{duty.Id}", ref enabled))
-                {
-                    duty.Enabled = enabled;
-                    LazyLoot.Config.Save();
-                }
-
-                ImGui.TableNextColumn();
-                CenterText();
-
-                ImGui.Image(GetDutyIcon(restrictedDuty), new Vector2(24, 24));
-                if (ImGui.IsItemHovered())
-                    ImGui.SetTooltip((restrictedDuty is { HighEndDuty: true, ContentType.Value.RowId: 5 }
-                        ? Svc.Data.GetExcelSheet<ContentType>()
-                            .FirstOrDefault(x => x.RowId == 28).Name
-                        : restrictedDuty.ContentType.Value.Name).ToString());
-
-                ImGui.TableNextColumn();
-                ImGui.Text(restrictedDuty.Name.ToString());
-                if (ImGui.IsItemHovered())
-                    ImGui.SetTooltip(restrictedDuty.Name.ToString());
-
-                ImGui.TableNextColumn();
-                CenterText();
-                if (ImGui.RadioButton($"##need{duty.Id}", duty.RollRule == RollResult.Needed))
-                {
-                    duty.RollRule = RollResult.Needed;
-                    LazyLoot.Config.Save();
-                }
-
-                ImGui.TableNextColumn();
-                CenterText();
-                if (ImGui.RadioButton($"##greed{duty.Id}", duty.RollRule == RollResult.Greeded))
-                {
-                    duty.RollRule = RollResult.Greeded;
-                    LazyLoot.Config.Save();
-                }
-
-                ImGui.TableNextColumn();
-                CenterText();
-                if (ImGui.RadioButton($"##pass{duty.Id}", duty.RollRule == RollResult.Passed))
-                {
-                    duty.RollRule = RollResult.Passed;
-                    LazyLoot.Config.Save();
-                }
-
-                ImGui.TableNextColumn();
-                CenterText();
-                if (ImGui.RadioButton($"##doNothing{duty.Id}", duty.RollRule == RollResult.UnAwarded))
-                {
-                    duty.RollRule = RollResult.UnAwarded;
-                    LazyLoot.Config.Save();
-                }
-
-                ImGui.TableNextColumn();
-                if (ImGui.Button($"Remove##{duty.Id}"))
-                {
-                    LazyLoot.Config.Restrictions.Duties.RemoveAt(i);
-                    LazyLoot.Config.Save();
-                    break;
-                }
+                ImGuiEx.TextCentered("No duties added.");
+                ImGuiEx.TextCentered("Click the Add duty below to start adding duties.");
+                ImGui.EndChild();
             }
 
-            ImGui.EndTable();
+            ImGui.PopStyleVar();
+            ImGui.Dummy(new Vector2(0, 6));
+        }
+        else
+        {
+            if (ImGui.BeginTable("UserRestrictionDutiesTable", 8, ImGuiTableFlags.Borders))
+            {
+                ImGui.TableSetupColumn("Enabled", ImGuiTableColumnFlags.WidthFixed, 50f);
+                ImGui.TableSetupColumn("Type", ImGuiTableColumnFlags.WidthFixed, 32f);
+                ImGui.TableSetupColumn("Name", ImGuiTableColumnFlags.WidthStretch);
+                ImGui.TableSetupColumn("Need", ImGuiTableColumnFlags.WidthFixed, 50f);
+                ImGui.TableSetupColumn("Greed", ImGuiTableColumnFlags.WidthFixed, 50f);
+                ImGui.TableSetupColumn("Pass", ImGuiTableColumnFlags.WidthFixed, 50f);
+                ImGui.TableSetupColumn("Nothing", ImGuiTableColumnFlags.WidthFixed, 50f);
+                ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 60f);
+                ImGui.TableHeadersRow();
+
+                for (var i = 0; i < duties.Count; i++)
+                {
+                    var duty = duties[i];
+                    var restrictedDuty = Svc.Data.GetExcelSheet<ContentFinderCondition>().GetRow(duty.Id);
+                    var enabled = duty.Enabled;
+                    ImGui.TableNextRow();
+                    ImGui.TableNextColumn();
+                    CenterText();
+                    if (ImGui.Checkbox($"##{duty.Id}", ref enabled))
+                    {
+                        duty.Enabled = enabled;
+                        LazyLoot.Config.Save();
+                    }
+
+                    ImGui.TableNextColumn();
+                    CenterText();
+
+                    ImGui.Image(GetDutyIcon(restrictedDuty), new Vector2(24, 24));
+                    if (ImGui.IsItemHovered())
+                        ImGui.SetTooltip((restrictedDuty is { HighEndDuty: true, ContentType.Value.RowId: 5 }
+                            ? Svc.Data.GetExcelSheet<ContentType>()
+                                .FirstOrDefault(x => x.RowId == 28).Name
+                            : restrictedDuty.ContentType.Value.Name).ToString());
+
+                    ImGui.TableNextColumn();
+                    ImGui.Text(restrictedDuty.Name.ToString());
+                    if (ImGui.IsItemHovered())
+                        ImGui.SetTooltip(restrictedDuty.Name.ToString());
+
+                    ImGui.TableNextColumn();
+                    CenterText();
+                    if (ImGui.RadioButton($"##need{duty.Id}", duty.RollRule == RollResult.Needed))
+                    {
+                        duty.RollRule = RollResult.Needed;
+                        LazyLoot.Config.Save();
+                    }
+
+                    ImGui.TableNextColumn();
+                    CenterText();
+                    if (ImGui.RadioButton($"##greed{duty.Id}", duty.RollRule == RollResult.Greeded))
+                    {
+                        duty.RollRule = RollResult.Greeded;
+                        LazyLoot.Config.Save();
+                    }
+
+                    ImGui.TableNextColumn();
+                    CenterText();
+                    if (ImGui.RadioButton($"##pass{duty.Id}", duty.RollRule == RollResult.Passed))
+                    {
+                        duty.RollRule = RollResult.Passed;
+                        LazyLoot.Config.Save();
+                    }
+
+                    ImGui.TableNextColumn();
+                    CenterText();
+                    if (ImGui.RadioButton($"##doNothing{duty.Id}", duty.RollRule == RollResult.UnAwarded))
+                    {
+                        duty.RollRule = RollResult.UnAwarded;
+                        LazyLoot.Config.Save();
+                    }
+
+                    ImGui.TableNextColumn();
+                    if (ImGui.Button($"Remove##{duty.Id}"))
+                    {
+                        LazyLoot.Config.Restrictions.Duties.RemoveAt(i);
+                        LazyLoot.Config.Save();
+                        break;
+                    }
+                }
+
+                ImGui.EndTable();
+            }
         }
 
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(2, 0));
@@ -774,6 +833,7 @@ public class ConfigUi : Window, IDisposable
         if (ImGui.Button("Add Duty", new Vector2(-1, 0)))
         {
             searchResultsQuery = "";
+            focusItemSearchOnOpen = true;
             ImGui.OpenPopup("duty_search_add");
         }
 
@@ -796,7 +856,7 @@ public class ConfigUi : Window, IDisposable
             {
                 if (importedRestrictions != null)
                 {
-                    LazyLoot.Config.Restrictions.Duties = importedRestrictions;
+                    duties = importedRestrictions;
                     LazyLoot.Config.Save();
                     Notify.Success("Imported Duty Restrictions successfully!");
                 }
@@ -844,6 +904,12 @@ public class ConfigUi : Window, IDisposable
                     ImGui.CalcTextSize($"{duty.Name} (ID: {duty.RowId})").X).DefaultIfEmpty(200f)
                 .Max() + 30);
             ImGui.SetNextItemWidth(maxWidth);
+            if (focusItemSearchOnOpen)
+            {
+                ImGui.SetKeyboardFocusHere();
+                focusItemSearchOnOpen = false;
+            }
+
             ImGui.InputText("##dutySearch", ref searchResultsQuery, 100);
             if (!string.IsNullOrEmpty(searchResultsQuery))
                 if (ImGui.BeginChild("dutySearchResults", new Vector2(maxWidth, 200), true))
