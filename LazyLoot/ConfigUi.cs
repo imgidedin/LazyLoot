@@ -221,15 +221,16 @@ public class ConfigUi : Window, IDisposable
         }
     }
 
-    private static void DrawOnlyTradeableCheckbox(ref bool parentRestriction, ref bool thisRestriction)
+    private static void DrawOnlyUntradeableCheckbox(string id, ref bool parentRestriction, ref bool thisRestriction)
     {
         if (!parentRestriction) return;
-
+        ImGui.PushID(id);
         ImGui.Indent(20f);
         ImGui.Checkbox(
             "Only Untradeables",
             ref thisRestriction);
         ImGui.Unindent(20f);
+        ImGui.PopID();
     }
 
     private static void DrawUserRestrictionEverywhere()
@@ -252,52 +253,60 @@ public class ConfigUi : Window, IDisposable
         if (!LazyLoot.Config.RestrictionIgnoreItemUnlocked)
         {
             ImGui.Checkbox("Pass on unlocked Mounts.", ref LazyLoot.Config.RestrictionIgnoreMounts);
-            DrawOnlyTradeableCheckbox(
+            DrawOnlyUntradeableCheckbox(
+                "RestrictionMountsOnlyUntradeables",
                 ref LazyLoot.Config.RestrictionIgnoreMounts,
                 ref LazyLoot.Config.RestrictionMountsOnlyUntradeables
             );
 
             ImGui.Checkbox("Pass on unlocked Minions.", ref LazyLoot.Config.RestrictionIgnoreMinions);
-            DrawOnlyTradeableCheckbox(
+            DrawOnlyUntradeableCheckbox(
+                "RestrictionMinionsOnlyUntradeables",
                 ref LazyLoot.Config.RestrictionIgnoreMinions,
                 ref LazyLoot.Config.RestrictionMinionsOnlyUntradeables
             );
 
             ImGui.Checkbox("Pass on unlocked Bardings.", ref LazyLoot.Config.RestrictionIgnoreBardings);
-            DrawOnlyTradeableCheckbox(
+            DrawOnlyUntradeableCheckbox(
+                "RestrictionBardingsOnlyUntradeables",
                 ref LazyLoot.Config.RestrictionIgnoreBardings,
                 ref LazyLoot.Config.RestrictionBardingsOnlyUntradeables
             );
 
             ImGui.Checkbox("Pass on unlocked Triple Triad cards.",
                 ref LazyLoot.Config.RestrictionIgnoreTripleTriadCards);
-            DrawOnlyTradeableCheckbox(
+            DrawOnlyUntradeableCheckbox(
+                "RestrictionTripleTriadCardsOnlyUntradeables",
                 ref LazyLoot.Config.RestrictionIgnoreTripleTriadCards,
                 ref LazyLoot.Config.RestrictionTripleTriadCardsOnlyUntradeables
             );
 
             ImGui.Checkbox("Pass on unlocked Emotes and Hairstyle.",
                 ref LazyLoot.Config.RestrictionIgnoreEmoteHairstyle);
-            DrawOnlyTradeableCheckbox(
+            DrawOnlyUntradeableCheckbox(
+                "RestrictionEmoteHairstyleOnlyUntradeables",
                 ref LazyLoot.Config.RestrictionIgnoreEmoteHairstyle,
                 ref LazyLoot.Config.RestrictionEmoteHairstyleOnlyUntradeables
             );
 
             ImGui.Checkbox("Pass on unlocked Orchestrion Rolls.",
                 ref LazyLoot.Config.RestrictionIgnoreOrchestrionRolls);
-            DrawOnlyTradeableCheckbox(
+            DrawOnlyUntradeableCheckbox(
+                "RestrictionOrchestrionRollsOnlyUntradeables",
                 ref LazyLoot.Config.RestrictionIgnoreOrchestrionRolls,
                 ref LazyLoot.Config.RestrictionOrchestrionRollsOnlyUntradeables
             );
 
             ImGui.Checkbox("Pass on unlocked Faded Copies.", ref LazyLoot.Config.RestrictionIgnoreFadedCopy);
-            DrawOnlyTradeableCheckbox(
+            DrawOnlyUntradeableCheckbox(
+                "RestrictionFadedCopyOnlyUntradeables",
                 ref LazyLoot.Config.RestrictionIgnoreFadedCopy,
                 ref LazyLoot.Config.RestrictionFadedCopyOnlyUntradeables
             );
         }
 
-        DrawOnlyTradeableCheckbox(
+        DrawOnlyUntradeableCheckbox(
+            "RestrictionAllUnlockablesOnlyUntradeables",
             ref LazyLoot.Config.RestrictionIgnoreItemUnlocked,
             ref LazyLoot.Config.RestrictionAllUnlockablesOnlyUntradeables
         );
