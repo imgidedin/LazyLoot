@@ -344,15 +344,18 @@ internal static class Roller
             if (LazyLoot.Config.RestrictionOtherJobItems && !canNeed)
             {
                 DuoLog.Debug(
-                    $@"{lootItem.Value.Name} has been passed due to not being an item to your current job ({Svc.Data.GetExcelSheet<ClassJob>().GetRow(UIState.Instance()->PlayerState.CurrentClassJobId).Name}) [Pass Not For Job]");
+                    $@"{lootItem.Value.Name} has been passed due to not being an item to your current job ({Player.Object?.ClassJob.Value.Name}) [Pass Not For Job]");
                 return RollResult.Passed;
             }
         }
 
-        if (LazyLoot.Config.RestrictionOtherJobItems
-            && lootItem.Value.ItemAction.Value.Action.Value.RowId == 29153
-            && !(Player.Object?.ClassJob.RowId is 1 or 19))
+        if (LazyLoot.Config.RestrictionOtherJobItems && lootItem.Value.ItemAction.Value.Action.Value.RowId == 29153 &&
+            Player.Object?.ClassJob.RowId is not (1 or 19))
+        {
+            DuoLog.Debug(
+                $@"{lootItem.Value.Name} has been passed due to not being an item to your current job and is a GLA/PLD weapon set ({Player.Object?.ClassJob.Value.Name}) [Pass Not For Job]");
             return RollResult.Passed;
+        }
 
         return RollResult.UnAwarded;
     }
