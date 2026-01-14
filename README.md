@@ -1,17 +1,17 @@
 [![image](https://discordapp.com/api/guilds/1001823907193552978/embed.png?style=banner2)](https://discord.gg/Zzrcc8kmvy)
 
-Repo URL:
-
-```
-https://love.puni.sh/ment.json
-```
-
 # FFXIV LazyLoot
 
 LazyLoot is a Dalamud plugin that helps you roll on loot quickly and consistently. It can issue one-time rolls on everything in the current chest, or run fully automatic rolls (FULF) with delays and filters so it still feels like a real person at the keyboard. It also lets you define global rules and overrides per item or duty so your loot preferences are always respected.
 
 ## Quick start
 
+* Add this Repo URL to your Dalamud Experimental settings `/xlsettings > Experimental Tab`:
+
+```
+https://love.puni.sh/ment.json
+```
+* Install the plugin from the `/xlplugins > All Plugins > Lazy Loot`.
 * `/lazy` opens the configuration window.
 * Use `/lazy need`, `/lazy greed`, or `/lazy pass` to roll on the currently available loot.
 * If you want hands-free rolls, enable FULF in the config or with `/fulf`.
@@ -53,12 +53,10 @@ You also control how quickly rolls happen with min/max delay ranges, both for ma
 
 ## Configuration guide
 
-Below is a friendly map of everything you can configure.
-
 ### Rolling behavior
 
 * **Rolling delay between items**: set minimum and maximum delay for `/lazy need/greed/pass` rolls.
-* **FULF delay range**: set a separate minimum/maximum delay used by automatic rolls.
+* **FULF delay range**: Min/max delay for auto rolls (minimum enforced to avoid suspiciously fast rolls).
 
 ### Loot filters (global rules)
 
@@ -73,6 +71,7 @@ These rules apply to all loot unless overridden by per-item or per-duty settings
   * Emotes/hairstyles
   * Orchestrion rolls
   * Faded copies
+  * *There is also the option to only pass already obtained unlockables if they are untradeables*
 * **Other-job items**: pass on gear you can’t use on your current job.
 * **Weekly lockout protection**: suspend rolling in weekly lockout duties.
 * **Low-ilvl gear rule**: for gear you *can* need, decide whether to greed or pass if it’s below your current job’s item level by a configurable threshold.
@@ -111,12 +110,6 @@ The same override system exists for duties:
 ### DTR (Server Info Bar) display
 
 LazyLoot shows a DTR entry with your current FULF mode. You can toggle the entry on/off from the config, and the DTR entry can be clicked to cycle FULF modes (left/right click) or open the config with Ctrl+click.
-
-## Example setups
-
-* **“Greed only, skip duplicates”**: enable unlocked item filters and use `/lazy greed` for quick dungeon runs.
-* **“Auto pass junk”**: enable item level and seal filters, turn on FULF with Greed or Pass.
-* **“Need upgrades only”**: enable the “Not an upgrade” rule so non-upgrades downgrade to Greed or Pass.
 
 ---
 

@@ -36,6 +36,9 @@ public class LazyLoot : IDalamudPlugin, IDisposable
     static DateTime _nextRollTime = DateTime.Now;
     static RollResult _rollOption = RollResult.UnAwarded;
     private static int _need, _greed, _pass;
+    
+    private const uint CastYourLotMessage = 5194;
+    private const uint WeeklyLockoutMessage = 4234;
 
     public LazyLoot(IDalamudPluginInterface pluginInterface)
     {
@@ -344,44 +347,40 @@ public class LazyLoot : IDalamudPlugin, IDisposable
     private void NoticeLoot(XivChatType type, int senderId, ref SeString sender, ref SeString message,
         ref bool isHandled)
     {
-        if (type is XivChatType.SystemMessage)
-            UpdateWeeklyLockoutDutyFlag(message);
-
         if (!Config.FulfEnabled || type != (XivChatType)2105) return;
-
-        string textValue = message.TextValue;
-        if (textValue == Svc.Data.GetExcelSheet<LogMessage>().First(x => x.RowId == 5194).Text)
-        {
-            _nextRollTime = DateTime.Now.AddMilliseconds(new Random()
-                .Next((int)(Config.FulfMinRollDelayInSeconds * 1000),
-                    (int)(Config.FulfMaxRollDelayInSeconds * 1000)));
-
-            _rollOption = RollArray[Config.FulfRoll];
-        }
+        // do a few checks to see if the message is the weekly lockout message the game sends
+        if (CheckAndUpdateWeeklyLockoutDutyFlag(message)) return;
+        // if not Cast your lot, then just ignore
+        if (message.TextValue != Svc.Data.GetExcelSheet<LogMessage>().First(x => x.RowId == CastYourLotMessage).Text) return;
+        _nextRollTime = DateTime.Now.AddMilliseconds(new Random()
+            .Next((int)(Config.FulfMinRollDelayInSeconds * 1000),
+                (int)(Config.FulfMaxRollDelayInSeconds * 1000)));
+        _rollOption = RollArray[Config.FulfRoll];
     }
 
-    private static void UpdateWeeklyLockoutDutyFlag(SeString message)
+    private static bool CheckAndUpdateWeeklyLockoutDutyFlag(SeString message)
     {
         if (!Config.RestrictionWeeklyLockoutItems || Config.WeeklyLockoutDutyActive)
-            return;
+            return false;
 
         if (!IsHighEndDutyTerritory(Svc.ClientState.TerritoryType))
         {
             ClearWeeklyLockoutDutyState();
-            return;
+            return false;
         }
 
-        var logMessage = Svc.Data.GetExcelSheet<LogMessage>().GetRowOrDefault(4234);
-        if (logMessage == null)
-            return;
+        var weeklyLockoutMessage = Svc.Data.GetExcelSheet<LogMessage>().GetRowOrDefault(WeeklyLockoutMessage);
+        if (weeklyLockoutMessage == null)
+            return false;
 
-        if (message.TextValue == logMessage.Value.Text)
-        {
-            Config.WeeklyLockoutDutyActive = true;
-            Config.WeeklyLockoutDutyTerritoryId = Svc.ClientState.TerritoryType;
-            Config.Save();
-            DuoLog.Debug("Weekly lockout duty detected! Rolling is temporarily suspended.");
-        }
+        if (message.TextValue != weeklyLockoutMessage.Value.Text) return false;
+        
+        Config.WeeklyLockoutDutyActive = true;
+        Config.WeeklyLockoutDutyTerritoryId = Svc.ClientState.TerritoryType;
+        Config.Save();
+        DuoLog.Debug("Weekly lockout duty detected! Rolling is temporarily suspended.");
+
+        return true;
     }
 
     private static void OnTerritoryChanged(ushort territoryId)
