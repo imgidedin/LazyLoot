@@ -242,7 +242,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 
     private static void OnOpenConfigUi()
     {
-        _configUi.IsOpen = !_configUi.IsOpen;
+        _configUi.Toggle();
     }
 
     private static void OnFrameworkUpdate(IFramework framework)
