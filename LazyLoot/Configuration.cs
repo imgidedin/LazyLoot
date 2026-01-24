@@ -138,7 +138,7 @@ public class Configuration : IPluginConfiguration
     public ushort WeeklyLockoutDutyTerritoryId = 0;
 
     // Legacy single restriction group for migration stuff for older versions
-    private RestrictionGroup Restrictions { get; } = new();
+    public RestrictionGroup Restrictions { get; set; } = new();
 
     public List<RestrictionPreset> RestrictionPresets { get; private set; } = [];
     public Guid ActiveRestrictionPresetId { get; set; } = Guid.Empty;
