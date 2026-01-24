@@ -44,6 +44,7 @@ public class Configuration : IPluginConfiguration
     public bool FulfEnabled = false;
     public float FulfMaxRollDelayInSeconds = 3f;
     public float FulfMinRollDelayInSeconds = 1.5f;
+    public bool UnlockablesOnlyMode = false;
 
     // FulfRollOption
     public int FulfRoll = 0;

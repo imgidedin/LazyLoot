@@ -159,6 +159,43 @@ internal static class Roller
         return restriction && (!onlyUntradeable || (onlyUntradeable && item!.Value.IsUntradable));
     }
 
+    private static bool IsUnlockableItem(Item item, IReadOnlyCollection<uint> orchId)
+    {
+        if (orchId.Count > 0)
+            return true;
+
+        return item.ItemAction.Value.Action.Value.RowId is 1322 or 853 or 1013 or 2633 or 3357 or 25183;
+    }
+
+    private static bool IsUnlockableUnlocked(uint itemId, IReadOnlyCollection<uint> orchId)
+    {
+        return orchId.Count > 0 ? orchId.All(IsItemUnlocked) : IsItemUnlocked(itemId);
+    }
+
+    private static RollResult GetUnlockablesOnlyResult(uint itemId, Item? lootItem, List<uint> orchId)
+    {
+        if (lootItem == null)
+            return RollResult.Passed;
+
+        if (!IsUnlockableItem(lootItem.Value, orchId))
+        {
+            if (LazyLoot.Config.DiagnosticsMode)
+                DuoLog.Debug(
+                    $"{lootItem.Value.Name.ToString()} has been passed due to Unlockables Only mode. [Unlockables Only - Not an Unlockable]");
+            return RollResult.Passed;
+        }
+
+        // Returns Needed to allow fulf to reduce it to whatever it is set to
+        if (!IsUnlockableUnlocked(itemId, orchId)) return RollResult.Needed;
+        
+        if (LazyLoot.Config.DiagnosticsMode)
+            DuoLog.Debug(
+                $"{lootItem.Value.Name.ToString()} has been passed because it is already unlocked. [Unlockables Only - Already Unlocked]");
+        
+        return RollResult.Passed;
+
+    }
+
     private static unsafe RollResult GetPlayerRestrictByItemId(uint itemId, bool canNeed)
     {
         var lootItem = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId);
@@ -170,6 +207,9 @@ internal static class Roller
             DuoLog.Debug($"Passing due to unknown item? Please give this ID to the developers: {itemId} [Unknown ID]");
             return RollResult.Passed;
         }
+
+        if (LazyLoot.Config.UnlockablesOnlyMode)
+            return GetUnlockablesOnlyResult(itemId, lootItem, orchId);
 
         if (lootItem.Value.IsUnique && ItemCount(itemId) > 0)
         {
@@ -417,7 +457,8 @@ internal static class Roller
             if (loot.LootMode is LootMode.LootMasterGreedOnly or LootMode.Unavailable)
                 continue;
 
-            var checkWeekly = LazyLoot.Config.RestrictionWeeklyLockoutItems;
+            var checkWeekly = LazyLoot.Config.RestrictionWeeklyLockoutItems &&
+                              !LazyLoot.Config.UnlockablesOnlyMode;
 
             var lootId = loot.ItemId;
             var contentFinderInfo = Svc.Data.GetExcelSheet<ContentFinderCondition>()

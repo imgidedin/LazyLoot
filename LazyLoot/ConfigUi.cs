@@ -5,6 +5,8 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Game.Text.SeStringHandling;
+using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Interface.Colors;
 using Dalamud.Interface.Components;
 using Dalamud.Interface.Textures;
@@ -30,7 +32,7 @@ public class ConfigUi : Window, IDisposable
     {
         SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = new Vector2(680, 380),
+            MinimumSize = new Vector2(680, 400),
             MaximumSize = new Vector2(99999, 99999)
         };
         _windowSystem.AddWindow(this);
@@ -50,16 +52,6 @@ public class ConfigUi : Window, IDisposable
             if (ImGui.BeginTabItem("Features"))
             {
                 DrawFeatures();
-                ImGui.Separator();
-                DrawRollingDelay();
-                ImGui.Separator();
-                DrawChatAndToast();
-                ImGui.Separator();
-                DrawDtrToggle();
-                ImGui.Separator();
-                DrawFulf();
-                ImGui.Separator();
-                DrawDiagnostics();
                 ImGui.EndTabItem();
             }
 
@@ -72,6 +64,12 @@ public class ConfigUi : Window, IDisposable
             if (ImGui.BeginTabItem("About"))
             {
                 AboutTab.Draw("LazyLoot");
+                ImGui.EndTabItem();
+            }
+
+            if (ImGui.BeginTabItem("Commands"))
+            {
+                DrawCommands();
                 ImGui.EndTabItem();
             }
 
@@ -135,10 +133,8 @@ public class ConfigUi : Window, IDisposable
         //}
     }
 
-    private void DrawDiagnostics()
+    private static void DrawDiagnostics()
     {
-        ImGuiEx.LineCentered("DiagnosticsLabel", () => ImGuiEx.TextUnderlined("Diagnostics & Troubleshooting"));
-
         if (ImGui.Checkbox("Diagnostics Mode", ref LazyLoot.Config.DiagnosticsMode))
             LazyLoot.Config.Save();
 
@@ -158,29 +154,71 @@ public class ConfigUi : Window, IDisposable
         base.OnClose();
     }
 
+    private static void DrawSectionHeader(string title)
+    {
+        var style = ImGui.GetStyle();
+        var cursor = ImGui.GetCursorPos();
+        var cursorScreen = ImGui.GetCursorScreenPos();
+        var size = new Vector2(ImGui.GetContentRegionAvail().X, ImGui.GetFrameHeight());
+        var bgColor = ImGui.GetColorU32(ImGuiColors.ParsedGrey);
+
+        ImGui.GetWindowDrawList().AddRectFilled(
+            cursorScreen,
+            new Vector2(cursorScreen.X + size.X, cursorScreen.Y + size.Y),
+            bgColor,
+            4f,
+            ImDrawFlags.RoundCornersAll);
+        ImGui.SetCursorPos(new Vector2(cursor.X + style.FramePadding.X, cursor.Y + style.FramePadding.Y));
+        ImGui.TextColored(new Vector4(0f, 0f, 0f, 1f), title);
+        ImGui.SetCursorPos(cursor with { Y = cursor.Y + size.Y + style.ItemSpacing.Y });
+    }
+
     private static void DrawFeatures()
     {
-        ImGuiEx.LineCentered("FeaturesLabel", () => ImGuiEx.TextUnderlined("LazyLoot Rolling Commands"));
-        ImGui.Columns(2, ImU8String.Empty, false);
-        ImGui.SetColumnWidth(0, 80);
-        ImGui.Text("/lazy need");
-        ImGui.NextColumn();
-        ImGui.Text("Roll need for everything. If impossible, roll greed (or pass if greed is impossible).");
-        ImGui.NextColumn();
-        ImGui.Text("/lazy greed");
-        ImGui.NextColumn();
-        ImGui.Text("Roll greed for everything. If impossible, roll pass.");
-        ImGui.NextColumn();
-        ImGui.Text("/lazy pass");
-        ImGui.NextColumn();
-        ImGui.Text("Pass on things you haven't rolled for yet.");
-        ImGui.NextColumn();
-        ImGui.Columns();
+        const float sectionIndent = 16f;
+
+        DrawSectionHeader("FULF Settings");
+        ImGui.Dummy(new Vector2(0, 4));
+
+        ImGui.Indent(sectionIndent);
+        DrawFulf();
+        ImGui.Unindent(sectionIndent);
+
+        ImGui.Dummy(new Vector2(0, 4));
+        DrawSectionHeader("Roll Delay Settings");
+        ImGui.Dummy(new Vector2(0, 4));
+
+        ImGui.Indent(sectionIndent);
+        DrawRollingDelay();
+        ImGui.Unindent(sectionIndent);
+
+        ImGui.Dummy(new Vector2(0, 4));
+        DrawSectionHeader("Display Settings");
+        ImGui.Dummy(new Vector2(0, 4));
+
+        ImGui.Indent(sectionIndent);
+        DrawChatAndToast();
+        ImGui.Unindent(sectionIndent);
+
+        ImGui.Dummy(new Vector2(0, 4));
+        DrawSectionHeader("DTR Bar Settings");
+        ImGui.Dummy(new Vector2(0, 4));
+
+        ImGui.Indent(sectionIndent);
+        DrawDtrToggle();
+        ImGui.Unindent(sectionIndent);
+
+        ImGui.Dummy(new Vector2(0, 4));
+        DrawSectionHeader("Diagnostics Settings");
+        ImGui.Dummy(new Vector2(0, 4));
+
+        ImGui.Indent(sectionIndent);
+        DrawDiagnostics();
+        ImGui.Unindent(sectionIndent);
     }
 
     private static void DrawRollingDelay()
     {
-        ImGuiEx.LineCentered("RollingDelayLabel", () => ImGuiEx.TextUnderlined("Rolling Command Delay"));
         ImGui.SetNextItemWidth(100);
 
         if (ImGui.DragFloatRange2("Rolling delay between items", ref LazyLoot.Config.MinRollDelayInSeconds,
@@ -190,6 +228,65 @@ public class ConfigUi : Window, IDisposable
 
             LazyLoot.Config.MaxRollDelayInSeconds = Math.Max(LazyLoot.Config.MaxRollDelayInSeconds,
                 LazyLoot.Config.MinRollDelayInSeconds + 0.1f);
+        }
+    }
+
+    private static void DrawCommands()
+    {
+        ImGui.TextWrapped("All commands can be entered in chat.");
+        ImGui.Separator();
+
+        if (ImGui.BeginTable("CommandList", 2, ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.RowBg))
+        {
+            ImGui.TableSetupColumn("Command", ImGuiTableColumnFlags.WidthFixed, 180f);
+            ImGui.TableSetupColumn("Description", ImGuiTableColumnFlags.WidthStretch);
+            DrawCenteredTableHeaders(2);
+
+            DrawCommandRow("/lazyloot", "Open LazyLoot config.");
+            DrawCommandRow("/lazy", "Open LazyLoot config.");
+            DrawCommandRow("/lazy need", "Roll need for all eligible items (greed/pass fallback).");
+            DrawCommandRow("/lazy greed", "Roll greed for all eligible items (pass fallback).");
+            DrawCommandRow("/lazy pass", "Pass on items you have not rolled for yet.");
+            DrawCommandRow("/lazy test <item id or name>", "Preview what LazyLoot would do for an item.");
+            DrawCommandRow("/fulf on", "Enable FULF.");
+            DrawCommandRow("/fulf off", "Disable FULF.");
+            DrawCommandRow("/fulf", "Toggle FULF on or off.");
+            DrawCommandRow("/fulf need|greed|pass", "Set the FULF roll mode.");
+
+            ImGui.EndTable();
+        }
+    }
+
+    private static void DrawCommandRow(string command, string description)
+    {
+        ImGui.TableNextRow();
+        ImGui.TableNextColumn();
+        ImGui.TextUnformatted(command);
+        ImGui.TableNextColumn();
+        ImGui.TextWrapped(description);
+    }
+
+    private static void TrySendItemLinkOnRightClick(Item item)
+    {
+        if (!ImGui.IsItemHovered() || !ImGui.IsMouseClicked(ImGuiMouseButton.Right) || !ImGui.GetIO().KeyShift)
+            return;
+
+        var link = new SeString(new ItemPayload(item.RowId, false), new TextPayload(item.Name.ExtractText()),
+            RawPayload.LinkTerminator);
+        Svc.Chat.Print(link);
+    }
+
+    private static void DrawCenteredTableHeaders(int columnCount)
+    {
+        ImGui.TableNextRow(ImGuiTableRowFlags.Headers);
+        for (var i = 0; i < columnCount; i++)
+        {
+            ImGui.TableSetColumnIndex(i);
+            var name = ImGui.TableGetColumnName(i);
+            var colTextWidth = ImGui.CalcTextSize(name).X;
+            var columnWidth = ImGui.GetColumnWidth();
+            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (columnWidth - colTextWidth) * 0.5f);
+            ImGui.TextUnformatted(name);
         }
     }
 
@@ -207,8 +304,41 @@ public class ConfigUi : Window, IDisposable
 
     private static void DrawUserRestrictionEverywhere()
     {
-        ImGui.TextWrapped("Settings in this page will apply to every single item, even if they are tradeable or not.");
+        if (ImGui.Checkbox("Unlockables Only", ref LazyLoot.Config.UnlockablesOnlyMode))
+            LazyLoot.Config.Save();
+        var unlockablesOnly = LazyLoot.Config.UnlockablesOnlyMode;
+        ImGui.SameLine();
+        ImGuiComponents.HelpMarker(
+            "Only roll on unlockables you do not own and pass on everything else.\nCustom restrictions still apply.\n\nThis option will still obey FULF settings. For this to work, FULF must be set to NEED (or GREED if you want to roll GREED).");
+        if (unlockablesOnly)
+        {
+            ImGui.SameLine();
+            ImGui.PushStyleColor(ImGuiCol.Text, ImGuiColors.DalamudYellow);
+            ImGui.TextWrapped("Unlockables Only is enabled. These settings are ignored until you disable it.");
+            ImGui.PopStyleColor();
+        }
+
         ImGui.Separator();
+        ImGui.Dummy(new Vector2(0, 4));
+        ImGuiEx.LineCentered("EverywhereRestrictionWarning",
+            () =>
+            {
+                ImGui.PushStyleColor(ImGuiCol.Text, ImGuiColors.DalamudGrey2);
+                ImGui.TextWrapped(
+                    "Settings in this page will apply to every single item, even if they are tradeable or not.");
+                ImGui.PopStyleColor();
+            });
+        ImGuiEx.LineCentered("EverywhereRestrictionWarning2",
+            () =>
+            {
+                ImGui.PushStyleColor(ImGuiCol.Text, ImGuiColors.DalamudGrey);
+                ImGui.TextWrapped("Some options may overrule the tradeable status.");
+                ImGui.PopStyleColor();
+            });
+
+        ImGui.Dummy(new Vector2(0, 4));
+        ImGui.Separator();
+        ImGui.BeginDisabled(unlockablesOnly);
         ImGui.Checkbox("Pass on items with an item level below",
             ref LazyLoot.Config.RestrictionIgnoreItemLevelBelow);
         ImGui.SameLine();
@@ -286,8 +416,13 @@ public class ConfigUi : Window, IDisposable
         ImGui.Checkbox("Pass on items I can't use with current job.",
             ref LazyLoot.Config.RestrictionOtherJobItems);
 
+        ImGui.EndDisabled();
         ImGui.Checkbox("Don't roll on items or duties with a weekly lockout.",
             ref LazyLoot.Config.RestrictionWeeklyLockoutItems);
+        ImGui.SameLine();
+        ImGuiComponents.HelpMarker(
+            "On duties that have a specific lockout on a per-item basis, Lazy Loot will only roll on items without said flag (e.g., minions, orchestrations, cards, etc.).\nDuties like that are, for example, recent released Alliance Raids.\n\nFor duties with a server-side lockout, like current patch raids, Lazy Loot will check the server message stating that loot has certain weekly restrictions tied to it, and will disable its function until you leave the duty.");
+        ImGui.BeginDisabled(unlockablesOnly);
 
         ImGui.Checkbox("###RestrictionWeeklyLockoutItems", ref LazyLoot.Config.RestrictionLootLowerThanJobIlvl);
         ImGui.SameLine();
@@ -334,6 +469,7 @@ public class ConfigUi : Window, IDisposable
         ImGui.Checkbox("###NeverPassGlam", ref LazyLoot.Config.NeverPassGlam);
         ImGui.SameLine();
         ImGui.TextWrapped("Never pass on glamour items (Items that have an item and iLvl of 1)");
+        ImGui.EndDisabled();
     }
 
     private static void CenterText()
@@ -386,7 +522,7 @@ public class ConfigUi : Window, IDisposable
         }
         else
         {
-            if (ImGui.BeginTable("UserRestrictionItemsTable", 8, ImGuiTableFlags.Borders))
+            if (ImGui.BeginTable("UserRestrictionItemsTable", 8, ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.RowBg))
             {
                 ImGui.TableSetupColumn("Enabled", ImGuiTableColumnFlags.WidthFixed, 50f);
                 ImGui.TableSetupColumn("Icon", ImGuiTableColumnFlags.WidthFixed, 32f);
@@ -395,8 +531,8 @@ public class ConfigUi : Window, IDisposable
                 ImGui.TableSetupColumn("Greed", ImGuiTableColumnFlags.WidthFixed, 50f);
                 ImGui.TableSetupColumn("Pass", ImGuiTableColumnFlags.WidthFixed, 50f);
                 ImGui.TableSetupColumn("Nothing", ImGuiTableColumnFlags.WidthFixed, 50f);
-                ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 60f);
-                ImGui.TableHeadersRow();
+                ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 70f);
+                DrawCenteredTableHeaders(8);
 
                 for (var i = 0; i < items.Count; i++)
                 {
@@ -420,11 +556,13 @@ public class ConfigUi : Window, IDisposable
                         ImGui.Image(icon.Handle, new Vector2(24, 24));
                     else
                         ImGui.Text("-");
+                    TrySendItemLinkOnRightClick(restrictedItem);
 
                     ImGui.TableNextColumn();
                     ImGui.Text(restrictedItem.Name.ToString());
                     if (ImGui.IsItemHovered())
                         ImGui.SetTooltip(restrictedItem.Name.ToString());
+                    TrySendItemLinkOnRightClick(restrictedItem);
 
                     ImGui.TableNextColumn();
                     CenterText();
@@ -639,7 +777,8 @@ public class ConfigUi : Window, IDisposable
         }
         else
         {
-            if (ImGui.BeginTable("UserRestrictionDutiesTable", 8, ImGuiTableFlags.Borders))
+            if (ImGui.BeginTable("UserRestrictionDutiesTable", 8,
+                    ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.RowBg))
             {
                 ImGui.TableSetupColumn("Enabled", ImGuiTableColumnFlags.WidthFixed, 50f);
                 ImGui.TableSetupColumn("Type", ImGuiTableColumnFlags.WidthFixed, 32f);
@@ -649,7 +788,7 @@ public class ConfigUi : Window, IDisposable
                 ImGui.TableSetupColumn("Pass", ImGuiTableColumnFlags.WidthFixed, 50f);
                 ImGui.TableSetupColumn("Nothing", ImGuiTableColumnFlags.WidthFixed, 50f);
                 ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 60f);
-                ImGui.TableHeadersRow();
+                DrawCenteredTableHeaders(8);
 
                 for (var i = 0; i < duties.Count; i++)
                 {
@@ -771,7 +910,7 @@ public class ConfigUi : Window, IDisposable
     private static void DrawRestrictions()
     {
         if (!ImGui.BeginTabBar("RestrictionTabs")) return;
-        
+
         if (ImGui.BeginTabItem("Everywhere"))
         {
             DrawUserRestrictionEverywhere();
@@ -797,7 +936,7 @@ public class ConfigUi : Window, IDisposable
         var activePreset = config.GetActiveRestrictionPreset();
 
         if (!ImGui.BeginTable("CustomRestrictionsLayout", 2)) return;
-        
+
         ImGui.TableSetupColumn("PresetList", ImGuiTableColumnFlags.WidthFixed, 200f);
         ImGui.TableSetupColumn("PresetEditor", ImGuiTableColumnFlags.WidthStretch);
         ImGui.TableNextRow();
@@ -834,6 +973,7 @@ public class ConfigUi : Window, IDisposable
                 LazyLoot.Config.ActiveRestrictionPresetId = preset.Id;
                 LazyLoot.Config.Save();
             }
+
             if (isDisabled)
                 ImGui.PopStyleColor();
 
@@ -923,12 +1063,12 @@ public class ConfigUi : Window, IDisposable
         }
     }
 
-    private void DrawChatAndToast()
+    private static void DrawChatAndToast()
     {
-        ImGuiEx.LineCentered("ChatInfoLabel", () => ImGuiEx.TextUnderlined("Roll Result Information"));
+        ImGui.Text("Roll Result Information");
         ImGui.Checkbox("Display roll information in chat.", ref LazyLoot.Config.EnableChatLogMessage);
         ImGui.Spacing();
-        ImGuiEx.LineCentered("ToastLabel", () => ImGuiEx.TextUnderlined("Display as Toasts"));
+        ImGui.Text("Display as Toasts");
         ImGuiComponents.HelpMarker("Show your roll information as a pop-up toast, using the various styles below.");
         ImGui.Checkbox("Quest", ref LazyLoot.Config.EnableQuestToast);
         ImGui.SameLine();
@@ -939,7 +1079,6 @@ public class ConfigUi : Window, IDisposable
 
     private static void DrawDtrToggle()
     {
-        ImGui.Spacing();
         ImGui.Text("Server Info Bar (DTR)");
         ImGui.Checkbox("###LazyLootDtrEnabled", ref LazyLoot.Config.ShowDtrEntry);
         ImGui.SameLine();
@@ -948,30 +1087,26 @@ public class ConfigUi : Window, IDisposable
             LazyLoot.Config.ShowDtrEntry ? "DTR Enabled" : "DTR Disabled"
         );
         ImGui.TextWrapped("Show/hide LazyLoot in the Dalamud Server Info Bar (DTR).");
+        ImGui.Separator();
+        ImGui.Dummy(new Vector2(0, 4));
+        ImGui.TextWrapped(
+            "Depending on your settings, sometimes the DTR entry text will show some extra information, like:");
+        ImGui.BulletText("WLD: Weekly Lockout Duty");
+        ImGui.Indent();
+        ImGui.TextWrapped(
+            "The currenty duty was detected as being restrict duty rolls for the week in a way that can't be resolved on a per item basis, so Lazy Loot is being disabled until you leave this duty;");
+        ImGui.Unindent();
+        ImGui.BulletText("Unlockables Only Mode");
+        ImGui.Indent();
+        ImGui.TextWrapped(
+            "Lazy Loot is only checking for items you can unlock and will roll what FULF is set to on unlockables, but will always pass on anything that isn't an unlockable, with the exception of Custom Restrictions. So, beware with this mode.");
+        ImGui.Unindent();
     }
 
-    private void DrawFulf()
+    private static void DrawFulf()
     {
-        ImGuiEx.LineCentered("FULFLabel", () => ImGuiEx.TextUnderlined("Fancy Ultimate Lazy Feature"));
-
         ImGui.TextWrapped(
             "Fancy Ultimate Lazy Feature (FULF) is a set and forget feature that will automatically roll on items for you instead of having to use the commands above.");
-        ImGui.Separator();
-        ImGui.Columns(2, ImU8String.Empty, false);
-        ImGui.SetColumnWidth(0, 80);
-        ImGui.Text("/fulf need");
-        ImGui.NextColumn();
-        ImGui.Text("Set FULF to Needing mode, where it will follow the /lazy need rules.");
-        ImGui.NextColumn();
-        ImGui.Text("/fulf greed");
-        ImGui.NextColumn();
-        ImGui.Text("Set FULF to Greeding mode, where it will follow the /lazy greed rules.");
-        ImGui.NextColumn();
-        ImGui.Text("/fulf pass");
-        ImGui.NextColumn();
-        ImGui.Text("Set FULF to Passing mode, where it will follow the /lazy pass rules.");
-        ImGui.NextColumn();
-        ImGui.Columns();
         ImGui.Separator();
         ImGui.Checkbox("###FulfEnabled", ref LazyLoot.Config.FulfEnabled);
         ImGui.SameLine();

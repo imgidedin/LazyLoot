@@ -265,6 +265,9 @@ public class LazyLoot : IDalamudPlugin, IDisposable
             dtrText = "FULF Disabled";
         }
 
+        if (Config.UnlockablesOnlyMode)
+            dtrText += " | Unlockables Only Mode";
+
         var isWeeklyLockedDutyActive = Config is { RestrictionWeeklyLockoutItems: true, WeeklyLockoutDutyActive: true };
 
         if (isWeeklyLockedDutyActive) dtrText += " (Disabled | WLD)";
