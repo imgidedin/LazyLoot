@@ -164,8 +164,17 @@ internal static class Roller
         if (orchId.Count > 0)
             return true;
 
-        return item.ItemAction.Value.Action.Value.RowId is 853 /* Minion */ or 1013 or 1322 or 2633 or 3357
-            or 20086 /* Parasols and stuff */ or 25183 /* Orchestrations */ or 37312 /* Faces we wear */;
+        return item.ItemAction.Value.Action.Value.RowId
+                is 853 // Unlocks a companion (minion) 
+                or 1013 // Unlocks a chocobo companion barding
+                or 1322 // Unlocks a mount
+                or 2633 // Unlocks various types of content (Riding Maps, Blue Mage Totems, Emotes, Hairstyles ...)
+                or 3357 // Unlocks a Triple Triad Card
+                or 20086 // Unlocks an Ornament (fashion accessory)
+                or 25183 // Unlocks an Orchestrion Roll
+                or 29459 // Unlocks portrait designs
+                or 37312 // Unlocks glasses and faces we wear type of items
+            ;
     }
 
     private static bool IsUnlockableUnlocked(uint itemId, IReadOnlyCollection<uint> orchId)
@@ -589,7 +598,7 @@ internal static class Roller
     {
         var lootItem = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId);
         if (lootItem == null || (lootItem.Value.IsUnique && ItemCount(itemId) > 0)) return RollResult.Passed;
-        
+
         var itemCustom = LazyLoot.Config.FindEnabledItemRestriction(itemId);
         if (itemCustom != null) return itemCustom.RollRule;
 
