@@ -23,19 +23,12 @@ namespace LazyLoot;
 
 public class ConfigUi : Window, IDisposable
 {
-    private static List<CustomRestriction> importedRestrictions;
-    private static int debugValue;
-    private static string searchResultsQuery;
-    private static double lastSearchTime;
-    private static Item[] itemSearchResults;
-    private static ContentFinderCondition[] dutySearchResults;
-
-    internal WindowSystem windowSystem = new();
-
-    private static bool focusItemSearchOnOpen;
+    private static List<CustomRestriction> _importedRestrictions;
+    private static int _debugValue;
+    private readonly WindowSystem _windowSystem = new();
 
     [StructLayout(LayoutKind.Explicit, Size = 0x40)]
-    public struct DebugLootItem
+    private struct DebugLootItem
     {
         [FieldOffset(0x00)] public uint ChestObjectId;
         [FieldOffset(0x04)] public uint ChestItemIndex; // This loot item's index in the chest it came from
@@ -61,13 +54,13 @@ public class ConfigUi : Window, IDisposable
             MinimumSize = new Vector2(400, 200),
             MaximumSize = new Vector2(99999, 99999)
         };
-        windowSystem.AddWindow(this);
-        Svc.PluginInterface.UiBuilder.Draw += windowSystem.Draw;
+        _windowSystem.AddWindow(this);
+        Svc.PluginInterface.UiBuilder.Draw += _windowSystem.Draw;
     }
 
     public void Dispose()
     {
-        Svc.PluginInterface.UiBuilder.Draw -= windowSystem.Draw;
+        Svc.PluginInterface.UiBuilder.Draw -= _windowSystem.Draw;
         GC.SuppressFinalize(this);
     }
 
@@ -127,8 +120,8 @@ public class ConfigUi : Window, IDisposable
     {
         if (ImGui.CollapsingHeader("Is Item Unlocked?"))
         {
-            ImGui.InputInt("Debug Value Tester", ref debugValue);
-            ImGui.Text($"Is Unlocked: {Roller.IsItemUnlocked((uint)debugValue)}");
+            ImGui.InputInt("Debug Value Tester", ref _debugValue);
+            ImGui.Text($"Is Unlocked: {Roller.IsItemUnlocked((uint)_debugValue)}");
         }
 
         if (ImGui.CollapsingHeader("Loot"))
@@ -530,16 +523,55 @@ public class ConfigUi : Window, IDisposable
         }
 
         ImGui.SameLine();
-        if (ImGui.Button("Add Item", new Vector2(-1, 0)))
-        {
-            searchResultsQuery = "";
-            focusItemSearchOnOpen = true;
-            ImGui.OpenPopup("item_search_add");
-        }
+        
+        var itemSheet = Svc.Data.GetExcelSheet<Item>();
+        Utils.PopupListButton(
+            buttonLabel: "Add item...",
+            popupId: "item_search_add",
+            popupTitle: "Search for item:",
+            getResults: q =>
+            {
+                if (uint.TryParse(q, out var searchId))
+                {
+                    return itemSheet
+                        .Where(x => x.RowId == searchId
+                                    && x is { RowId: > 0, Name.IsEmpty: false }
+                                    && LazyLoot.Config.Restrictions.Items.All(d => d.Id != x.RowId));
+                }
+
+                return itemSheet
+                    .Where(x =>
+                        x.Name.ToString().Contains(q, StringComparison.OrdinalIgnoreCase)
+                        && x is { RowId: > 0, Name.IsEmpty: false }
+                        && LazyLoot.Config.Restrictions.Items.All(d => d.Id != x.RowId));
+            },
+            getItemLabel: item => $" {item.Name} (ID: {item.RowId})",
+            renderItem: item =>
+            {
+                var icon = GetItemIcon(item.Icon);
+                if (icon != null)
+                {
+                    ImGui.Image(icon.Handle, new Vector2(16, 16));
+                    ImGui.SameLine();
+                }
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip(item.Name.ToString());
+                ImGui.SameLine();
+            },
+            onSelect: duty =>
+            {
+                LazyLoot.Config.Restrictions.Items.Add(new CustomRestriction
+                {
+                    Id = duty.RowId,
+                    Enabled = true,
+                    RollRule = RollResult.UnAwarded
+                });
+                LazyLoot.Config.Save();
+            }
+        );
 
         ImGui.PopStyleVar();
-
-        var itemSheet = Svc.Data.GetExcelSheet<Item>();
+        
 
         if (ImGui.BeginPopup("import_item_confirmation", ImGuiWindowFlags.AlwaysAutoResize))
         {
@@ -554,9 +586,9 @@ public class ConfigUi : Window, IDisposable
             ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(40 / 255f, 167 / 255f, 69 / 255f, 1.0f));
             if (ImGui.Button("YES", new Vector2(100f, 0)))
             {
-                if (importedRestrictions != null)
+                if (_importedRestrictions != null)
                 {
-                    LazyLoot.Config.Restrictions.Items = importedRestrictions;
+                    LazyLoot.Config.Restrictions.Items = _importedRestrictions;
                     LazyLoot.Config.Save();
                     Notify.Success("Imported Item Restrictions successfully!");
                 }
@@ -575,73 +607,12 @@ public class ConfigUi : Window, IDisposable
             ImGui.PopStyleColor();
             ImGui.EndPopup();
         }
-
-        if (ImGui.BeginPopup("item_search_add"))
-        {
-            ImGui.Text("Search for item:");
-            var currentTime = ImGui.GetTime();
-            if (ImGui.GetTime() > lastSearchTime + 0.1f)
-            {
-                lastSearchTime = currentTime;
-                itemSearchResults = !string.IsNullOrEmpty(searchResultsQuery)
-                    ? uint.TryParse(searchResultsQuery, out var searchId)
-                        ? itemSheet.Where(x =>
-                                x.RowId == searchId &&
-                                LazyLoot.Config.Restrictions.Items.All(i => i.Id != x.RowId))
-                            .Take(20)
-                            .ToArray()
-                        : itemSheet.Where(x =>
-                                x.Name.ToString().Contains(searchResultsQuery, StringComparison.OrdinalIgnoreCase) &&
-                                LazyLoot.Config.Restrictions.Items.All(i => i.Id != x.RowId))
-                            .Take(20)
-                            .ToArray()
-                    : [];
-            }
-
-            var maxWidth = Math.Max(300f, itemSearchResults.Select(item =>
-                ImGui.CalcTextSize($"{item.Name} (ID: {item.RowId})").X).DefaultIfEmpty(200f).Max() + 30);
-            ImGui.SetNextItemWidth(maxWidth);
-            if (focusItemSearchOnOpen)
-            {
-                ImGui.SetKeyboardFocusHere();
-                focusItemSearchOnOpen = false;
-            }
-
-            ImGui.InputText("##itemSearch", ref searchResultsQuery, 100);
-            if (!string.IsNullOrEmpty(searchResultsQuery))
-                if (ImGui.BeginChild("itemSearchResults", new Vector2(maxWidth, 200), true))
-                {
-                    foreach (var item in itemSearchResults)
-                    {
-                        var icon = GetItemIcon(item.Icon);
-                        if (icon != null)
-                        {
-                            ImGui.Image(icon.Handle, new Vector2(16, 16));
-                            ImGui.SameLine();
-                        }
-
-                        if (!ImGui.Selectable($" {item.Name} (ID: {item.RowId})")) continue;
-                        LazyLoot.Config.Restrictions.Items.Add(new CustomRestriction
-                        {
-                            Id = itemSheet.GetRow(item.RowId).RowId,
-                            Enabled = true,
-                            RollRule = RollResult.UnAwarded
-                        });
-                        LazyLoot.Config.Save();
-                        ImGui.CloseCurrentPopup();
-                    }
-
-                    ImGui.EndChild();
-                }
-
-            ImGui.EndPopup();
-        }
     }
 
     private static bool ValidateImport<T>(ExcelSheet<T> sheet) where T : struct, IExcelRow<T>
     {
         bool bail = false;
-        foreach (var item in importedRestrictions)
+        foreach (var item in _importedRestrictions)
         {
             if (sheet.Any(x => x.RowId == item.Id)) continue;
             bail = true;
@@ -671,7 +642,7 @@ public class ConfigUi : Window, IDisposable
             var result = JsonSerializer.Deserialize<List<CustomRestriction>>(clipboardText);
             if (result != null)
             {
-                importedRestrictions = result;
+                _importedRestrictions = result;
                 ImGui.OpenPopup(popupname);
             }
         }
@@ -830,20 +801,52 @@ public class ConfigUi : Window, IDisposable
         }
 
         ImGui.SameLine();
-        if (ImGui.Button("Add Duty", new Vector2(-1, 0)))
-        {
-            searchResultsQuery = "";
-            focusItemSearchOnOpen = true;
-            ImGui.OpenPopup("duty_search_add");
-        }
+        var dutySheet = Svc.Data.GetExcelSheet<ContentFinderCondition>();
+        Utils.PopupListButton(
+            buttonLabel: "Add duty...",
+            popupId: "duty_search_add",
+            popupTitle: "Search for duty:",
+            getResults: q =>
+            {
+                if (uint.TryParse(q, out var searchId))
+                {
+                    return dutySheet
+                        .Where(x => x.RowId == searchId
+                                    && x is { RowId: > 0, Name.IsEmpty: false }
+                                    && LazyLoot.Config.Restrictions.Duties.All(d => d.Id != x.RowId));
+                }
+
+                return dutySheet
+                    .Where(x =>
+                        x.Name.ToString().Contains(q, StringComparison.OrdinalIgnoreCase)
+                        && x is { RowId: > 0, Name.IsEmpty: false }
+                        && LazyLoot.Config.Restrictions.Duties.All(d => d.Id != x.RowId));
+            },
+            getItemLabel: duty => $" {duty.Name} (ID: {duty.RowId})",
+            renderItem: duty =>
+            {
+                ImGui.Image(GetDutyIcon(duty), new Vector2(16, 16));
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip(duty.Name.ToString());
+                ImGui.SameLine();
+            },
+            onSelect: duty =>
+            {
+                LazyLoot.Config.Restrictions.Duties.Add(new CustomRestriction
+                {
+                    Id = duty.RowId,
+                    Enabled = true,
+                    RollRule = RollResult.UnAwarded
+                });
+                LazyLoot.Config.Save();
+            }
+        );
 
         ImGui.PopStyleVar();
 
-        var dutySheet = Svc.Data.GetExcelSheet<ContentFinderCondition>();
-
         if (ImGui.BeginPopup("import_duty_confirmation", ImGuiWindowFlags.AlwaysAutoResize))
         {
-            bool validation = ValidateImport(dutySheet);
+            var validation = ValidateImport(dutySheet);
             if (!validation)
             {
                 ImGui.CloseCurrentPopup();
@@ -854,9 +857,9 @@ public class ConfigUi : Window, IDisposable
             ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(40 / 255f, 167 / 255f, 69 / 255f, 1.0f));
             if (ImGui.Button("YES", new Vector2(100f, 0)))
             {
-                if (importedRestrictions != null)
+                if (_importedRestrictions != null)
                 {
-                    duties = importedRestrictions;
+                    duties = _importedRestrictions;
                     LazyLoot.Config.Save();
                     Notify.Success("Imported Duty Restrictions successfully!");
                 }
@@ -873,67 +876,6 @@ public class ConfigUi : Window, IDisposable
             }
 
             ImGui.PopStyleColor();
-            ImGui.EndPopup();
-        }
-
-
-        if (ImGui.BeginPopup("duty_search_add"))
-        {
-            ImGui.Text("Search for duty:");
-            var currentTime = ImGui.GetTime();
-            if (ImGui.GetTime() > lastSearchTime + 0.1f)
-            {
-                lastSearchTime = currentTime;
-                dutySearchResults = !string.IsNullOrEmpty(searchResultsQuery)
-                    ? uint.TryParse(searchResultsQuery, out var searchId)
-                        ? dutySheet.Where(x =>
-                                x.RowId == searchId &&
-                                LazyLoot.Config.Restrictions.Items.All(i => i.Id != x.RowId))
-                            .Take(20)
-                            .ToArray()
-                        : dutySheet.Where(x =>
-                                x.Name.ToString().Contains(searchResultsQuery,
-                                    StringComparison.OrdinalIgnoreCase) &&
-                                LazyLoot.Config.Restrictions.Items.All(i => i.Id != x.RowId))
-                            .Take(20)
-                            .ToArray()
-                    : [];
-            }
-
-            var maxWidth = Math.Max(300f, dutySearchResults.Select(duty =>
-                    ImGui.CalcTextSize($"{duty.Name} (ID: {duty.RowId})").X).DefaultIfEmpty(200f)
-                .Max() + 30);
-            ImGui.SetNextItemWidth(maxWidth);
-            if (focusItemSearchOnOpen)
-            {
-                ImGui.SetKeyboardFocusHere();
-                focusItemSearchOnOpen = false;
-            }
-
-            ImGui.InputText("##dutySearch", ref searchResultsQuery, 100);
-            if (!string.IsNullOrEmpty(searchResultsQuery))
-                if (ImGui.BeginChild("dutySearchResults", new Vector2(maxWidth, 200), true))
-                {
-                    foreach (var duty in dutySearchResults)
-                    {
-                        ImGui.Image(GetDutyIcon(duty), new Vector2(16, 16));
-                        if (ImGui.IsItemHovered())
-                            ImGui.SetTooltip("Test");
-                        ImGui.SameLine();
-                        if (!ImGui.Selectable($" {duty.Name} (ID: {duty.RowId})")) continue;
-                        LazyLoot.Config.Restrictions.Duties.Add(new CustomRestriction
-                        {
-                            Id = dutySheet.GetRow(duty.RowId).RowId,
-                            Enabled = true,
-                            RollRule = RollResult.UnAwarded
-                        });
-                        LazyLoot.Config.Save();
-                        ImGui.CloseCurrentPopup();
-                    }
-
-                    ImGui.EndChild();
-                }
-
             ImGui.EndPopup();
         }
     }
