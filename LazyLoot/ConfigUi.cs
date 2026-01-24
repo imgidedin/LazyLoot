@@ -541,7 +541,8 @@ public class ConfigUi : Window, IDisposable
             DrawCommandRow("/lazy need", "Roll need for all eligible items (greed/pass fallback).");
             DrawCommandRow("/lazy greed", "Roll greed for all eligible items (pass fallback).");
             DrawCommandRow("/lazy pass", "Pass on items you have not rolled for yet.");
-            DrawCommandRow("/lazy test item <item id or name>", "Preview what LazyLoot would do for an item in a perfect scenario (up to need and no duty restriction).");
+            DrawCommandRow("/lazy test item <item id or name>",
+                "Preview what LazyLoot would do for an item in a perfect scenario (up to need and no duty restriction).");
             DrawCommandRow("/fulf on", "Enable FULF.");
             DrawCommandRow("/fulf off", "Disable FULF.");
             DrawCommandRow("/fulf", "Toggle FULF on or off.");
@@ -771,6 +772,14 @@ public class ConfigUi : Window, IDisposable
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (ImGui.GetColumnWidth() - ImGui.GetFrameHeight()) * 0.5f);
     }
 
+    private static bool ColoredRadioButton(string id, bool selected, Vector4 checkColor)
+    {
+        ImGui.PushStyleColor(ImGuiCol.CheckMark, checkColor);
+        var pressed = ImGui.RadioButton(id, selected);
+        ImGui.PopStyleColor();
+        return pressed;
+    }
+
     private static ImTextureID GetDutyIcon(ContentFinderCondition duty)
     {
         var icon = duty is { HighEndDuty: true, ContentType.Value.RowId: 5 }
@@ -865,14 +874,21 @@ public class ConfigUi : Window, IDisposable
                     if (Roller.IsUnlockableAndUnlocked(restrictedItem))
                     {
                         ImGui.SameLine(0, 6f);
-                        ImGui.PushStyleColor(ImGuiCol.Text, ImGuiColors.HealerGreen);
-                        ImGui.TextUnformatted("(unlocked)");
-                        ImGui.PopStyleColor();
+                        var obtainedIcon = GetItemIcon(230419);
+                        if (obtainedIcon != null)
+                        {
+                            var iconSize = new Vector2(16, 16);
+                            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 2f);
+                            ImGui.Image(obtainedIcon.Handle, iconSize);
+                            if (ImGui.IsItemHovered())
+                                ImGui.SetTooltip("Already Unlocked");
+                        }
                     }
 
                     ImGui.TableNextColumn();
                     CenterText();
-                    if (ImGui.RadioButton($"##need{item.Id}", item.RollRule == RollResult.Needed))
+                    if (ColoredRadioButton($"##need{item.Id}", item.RollRule == RollResult.Needed,
+                            ImGuiColors.HealerGreen))
                     {
                         item.RollRule = RollResult.Needed;
                         LazyLoot.Config.Save();
@@ -880,7 +896,8 @@ public class ConfigUi : Window, IDisposable
 
                     ImGui.TableNextColumn();
                     CenterText();
-                    if (ImGui.RadioButton($"##greed{item.Id}", item.RollRule == RollResult.Greeded))
+                    if (ColoredRadioButton($"##greed{item.Id}", item.RollRule == RollResult.Greeded,
+                            ImGuiColors.DalamudYellow))
                     {
                         item.RollRule = RollResult.Greeded;
                         LazyLoot.Config.Save();
@@ -888,7 +905,8 @@ public class ConfigUi : Window, IDisposable
 
                     ImGui.TableNextColumn();
                     CenterText();
-                    if (ImGui.RadioButton($"##pass{item.Id}", item.RollRule == RollResult.Passed))
+                    if (ColoredRadioButton($"##pass{item.Id}", item.RollRule == RollResult.Passed,
+                            ImGuiColors.DalamudRed))
                     {
                         item.RollRule = RollResult.Passed;
                         LazyLoot.Config.Save();
@@ -896,7 +914,8 @@ public class ConfigUi : Window, IDisposable
 
                     ImGui.TableNextColumn();
                     CenterText();
-                    if (ImGui.RadioButton($"##doNothing{item.Id}", item.RollRule == RollResult.UnAwarded))
+                    if (ColoredRadioButton($"##doNothing{item.Id}", item.RollRule == RollResult.UnAwarded,
+                            new Vector4(1f, 1f, 1f, 1f)))
                     {
                         item.RollRule = RollResult.UnAwarded;
                         LazyLoot.Config.Save();
@@ -963,6 +982,19 @@ public class ConfigUi : Window, IDisposable
                 LazyLoot.Config.Save();
             }
         );
+
+        ImGui.SameLine();
+        var ctrlHeld = ImGui.GetIO().KeyCtrl;
+        ImGui.BeginDisabled(!ctrlHeld);
+        if (ImGui.Button("Remove all items"))
+        {
+            restrictions.Items.Clear();
+            LazyLoot.Config.Save();
+        }
+
+        ImGui.EndDisabled();
+        if (!ctrlHeld && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip("Hold CTRL to allow removing all items.");
 
         ImGui.SameLine();
         var dutySheet = Svc.Data.GetExcelSheet<ContentFinderCondition>();
@@ -1166,7 +1198,8 @@ public class ConfigUi : Window, IDisposable
 
                     ImGui.TableNextColumn();
                     CenterText();
-                    if (ImGui.RadioButton($"##need{duty.Id}", duty.RollRule == RollResult.Needed))
+                    if (ColoredRadioButton($"##need{duty.Id}", duty.RollRule == RollResult.Needed,
+                            ImGuiColors.HealerGreen))
                     {
                         duty.RollRule = RollResult.Needed;
                         LazyLoot.Config.Save();
@@ -1174,7 +1207,8 @@ public class ConfigUi : Window, IDisposable
 
                     ImGui.TableNextColumn();
                     CenterText();
-                    if (ImGui.RadioButton($"##greed{duty.Id}", duty.RollRule == RollResult.Greeded))
+                    if (ColoredRadioButton($"##greed{duty.Id}", duty.RollRule == RollResult.Greeded,
+                            ImGuiColors.DalamudYellow))
                     {
                         duty.RollRule = RollResult.Greeded;
                         LazyLoot.Config.Save();
@@ -1182,7 +1216,8 @@ public class ConfigUi : Window, IDisposable
 
                     ImGui.TableNextColumn();
                     CenterText();
-                    if (ImGui.RadioButton($"##pass{duty.Id}", duty.RollRule == RollResult.Passed))
+                    if (ColoredRadioButton($"##pass{duty.Id}", duty.RollRule == RollResult.Passed,
+                            ImGuiColors.DalamudRed))
                     {
                         duty.RollRule = RollResult.Passed;
                         LazyLoot.Config.Save();
@@ -1190,7 +1225,8 @@ public class ConfigUi : Window, IDisposable
 
                     ImGui.TableNextColumn();
                     CenterText();
-                    if (ImGui.RadioButton($"##doNothing{duty.Id}", duty.RollRule == RollResult.UnAwarded))
+                    if (ColoredRadioButton($"##doNothing{duty.Id}", duty.RollRule == RollResult.UnAwarded,
+                            new Vector4(1f, 1f, 1f, 1f)))
                     {
                         duty.RollRule = RollResult.UnAwarded;
                         LazyLoot.Config.Save();
@@ -1250,6 +1286,19 @@ public class ConfigUi : Window, IDisposable
                 LazyLoot.Config.Save();
             }
         );
+
+        ImGui.SameLine();
+        var ctrlHeld = ImGui.GetIO().KeyCtrl;
+        ImGui.BeginDisabled(!ctrlHeld);
+        if (ImGui.Button("Remove all duties"))
+        {
+            restrictions.Duties.Clear();
+            LazyLoot.Config.Save();
+        }
+
+        ImGui.EndDisabled();
+        if (!ctrlHeld && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip("Hold CTRL to allow removing all duties.");
 
         ImGui.PopStyleVar();
     }
