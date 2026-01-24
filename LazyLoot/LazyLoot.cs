@@ -46,6 +46,8 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         PunishLibMain.Init(pluginInterface, "LazyLoot", new AboutPlugin() { Developer = "53m1k0l0n/Gidedin" });
 
         Config = Svc.PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        if (Config.MigrateIfNeeded())
+            Config.Save();
         _configUi = new ConfigUi();
         _dtrEntry = Svc.DtrBar.Get("LazyLoot");
         _dtrEntry.OnClick = OnDtrClick;

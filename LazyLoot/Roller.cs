@@ -1,25 +1,22 @@
-﻿using ECommons.DalamudServices;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.InteropServices;
+using ECommons.DalamudServices;
 using ECommons.GameHelpers;
 using ECommons.Logging;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Component.Exd;
 using Lumina.Excel.Sheets;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.InteropServices;
-using ECommons.ExcelServices;
 
 namespace LazyLoot;
 
 internal static class Roller
 {
-    private unsafe delegate bool RollItemRaw(Loot* lootIntPtr, RollResult option, uint lootItemIndex);
-
     private static RollItemRaw _rollItemRaw;
 
-    private static uint _itemId = 0, _index = 0;
+    private static uint _itemId, _index;
 
     public static void Clear()
     {
@@ -122,8 +119,7 @@ internal static class Roller
             return RollResult.Passed;
 
         // Here, we will check for the specific rules for items.
-        var itemCustomRestriction =
-            LazyLoot.Config.Restrictions.Items.FirstOrDefault(x => x.Id == loot.ItemId);
+        var itemCustomRestriction = LazyLoot.Config.FindEnabledItemRestriction(loot.ItemId);
         if (itemCustomRestriction is { Enabled: true })
         {
             if (LazyLoot.Config.DiagnosticsMode)
@@ -140,28 +136,27 @@ internal static class Roller
         // Here, we will check for the specific rules for the Duty.
         var contentFinderInfo = Svc.Data.GetExcelSheet<ContentFinderCondition>()
             .GetRow(GameMain.Instance()->CurrentContentFinderConditionId);
-        var dutyCustomRestriction =
-            LazyLoot.Config.Restrictions.Duties.FirstOrDefault(x => x.Id == contentFinderInfo.RowId);
-        if (dutyCustomRestriction is { Enabled: true })
+        var dutyCustomRestriction = LazyLoot.Config.FindEnabledDutyRestriction(contentFinderInfo.RowId);
+        if (dutyCustomRestriction is not { Enabled: true }) return null;
         {
-            if (LazyLoot.Config.DiagnosticsMode)
+            if (!LazyLoot.Config.DiagnosticsMode) return dutyCustomRestriction.RollRule;
+            var action = dutyCustomRestriction.RollRule switch
             {
-                var action = dutyCustomRestriction.RollRule == RollResult.Passed ? "passing" :
-                    dutyCustomRestriction.RollRule == RollResult.Greeded ? "greeding" :
-                    dutyCustomRestriction.RollRule == RollResult.Needed ? "needing" : "passing";
-                Svc.Log.Debug(
-                    $"{lootItem.Value.Name.ToString()} is {action} due to being in {contentFinderInfo.Name}. [Duty Custom Restriction]");
-            }
+                RollResult.Passed => "passing",
+                RollResult.Greeded => "greeding",
+                RollResult.Needed => "needing",
+                _ => "passing"
+            };
+            Svc.Log.Debug(
+                $"{lootItem.Value.Name.ToString()} is {action} due to being in {contentFinderInfo.Name}. [Duty Custom Restriction]");
 
             return dutyCustomRestriction.RollRule;
         }
-
-        return null;
     }
 
     private static bool ShouldPassUnlockable(bool restriction, bool onlyUntradeable, Item? item)
     {
-        return restriction && (!onlyUntradeable || onlyUntradeable && item!.Value.IsUntradable);
+        return restriction && (!onlyUntradeable || (onlyUntradeable && item!.Value.IsUntradable));
     }
 
     private static unsafe RollResult GetPlayerRestrictByItemId(uint itemId, bool canNeed)
@@ -290,7 +285,6 @@ internal static class Roller
         }
 
         if (LazyLoot.Config.RestrictionSeals)
-        {
             if (lootItem.Value is { Rarity: > 1, PriceLow: > 0, ClassJobCategory.RowId: > 0 })
             {
                 var gcSealValue = Svc.Data.Excel.GetSheet<GCSupplyDutyReward>()?.GetRow(lootItem.Value.LevelItem.RowId)
@@ -304,12 +298,10 @@ internal static class Roller
                     return RollResult.Passed;
                 }
             }
-        }
 
         if (lootItem.Value.EquipSlotCategory.RowId != 0)
         {
             if (LazyLoot.Config.RestrictionLootLowerThanJobIlvl && canNeed)
-            {
                 if (lootItem.Value.LevelItem.RowId <
                     Utils.GetPlayerIlevel() - LazyLoot.Config.RestrictionLootLowerThanJobIlvlTreshold)
                 {
@@ -321,7 +313,6 @@ internal static class Roller
                             $@"{lootItem.Value.Name} has been passed due to its iLvl being lower than your your current Job (Your: {Utils.GetPlayerIlevel()} | Item: {lootItem.Value.LevelItem.RowId} ) [Pass Item Level Job]");
                     return toReturn;
                 }
-            }
 
             if (LazyLoot.Config.RestrictionIgnoreItemLevelBelow
                 && lootItem.Value.LevelItem.RowId < LazyLoot.Config.RestrictionIgnoreItemLevelBelowValue)
@@ -380,25 +371,19 @@ internal static class Roller
         return RollResult.UnAwarded;
     }
 
-    public static void UpdateFadedCopy(uint itemId, out List<uint> orchId)
+    private static void UpdateFadedCopy(uint itemId, out List<uint> orchId)
     {
-        orchId = new List<uint>();
+        orchId = [];
         var lumina = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId);
-        if (lumina != null)
-            if (lumina.Value.FilterGroup == 12 && lumina.Value.ItemUICategory.RowId == 94)
-            {
-                var recipe = Svc.Data.GetExcelSheet<Recipe>()
-                    ?.Where(x => x.Ingredient.Any(y => y.RowId == lumina.Value.RowId)).Select(x => x.ItemResult.Value)
-                    .FirstOrDefault();
-                if (recipe != null)
-                {
-                    if (LazyLoot.Config.DiagnosticsMode)
-                        DuoLog.Debug(
-                            $"Updating Faded Copy {lumina.Value.Name} ({itemId}) to Non-Faded {recipe.Value.Name} ({recipe.Value.RowId})");
-                    orchId.Add(recipe.Value.RowId);
-                    return;
-                }
-            }
+        if (lumina is not { FilterGroup: 12, ItemUICategory.RowId: 94 }) return;
+        var recipe = Svc.Data.GetExcelSheet<Recipe>()
+            ?.Where(x => x.Ingredient.Any(y => y.RowId == lumina.Value.RowId)).Select(x => x.ItemResult.Value)
+            .FirstOrDefault();
+        if (recipe == null) return;
+        if (LazyLoot.Config.DiagnosticsMode)
+            DuoLog.Debug(
+                $"Updating Faded Copy {lumina.Value.Name} ({itemId}) to Non-Faded {recipe.Value.Name} ({recipe.Value.RowId})");
+        orchId.Add(recipe.Value.RowId);
     }
 
     private static RollResult ResultMerge(params RollResult[] results)
@@ -439,12 +424,10 @@ internal static class Roller
                 .GetRow(GameMain.Instance()->CurrentContentFinderConditionId);
 
             // We load the users restrictions
-            var itemCustomRestriction =
-                LazyLoot.Config.Restrictions.Items.FirstOrDefault(x =>
-                    x.Id == lootId && x is { Enabled: true });
-            var dutyCustomRestriction =
-                LazyLoot.Config.Restrictions.Duties.FirstOrDefault(x =>
-                    x.Id == contentFinderInfo.RowId && x is { Enabled: true, RollRule: RollResult.UnAwarded });
+            var itemCustomRestriction = LazyLoot.Config.FindEnabledItemRestriction(lootId);
+            var dutyCustomRestriction = LazyLoot.Config.FindEnabledDutyRestriction(contentFinderInfo.RowId);
+            if (dutyCustomRestriction is not { RollRule: RollResult.UnAwarded })
+                dutyCustomRestriction = null;
 
             Item? item = null;
 
@@ -478,7 +461,7 @@ internal static class Roller
                 checkWeekly = false;
             }
 
-            // loot.RollValue == 20 means it cant be rolled because one was already obtained this week.
+            // loot.RollValue == 20 means it can't be rolled because one was already obtained this week.
             // we ignore that so it will be passed automatically, as there is nothing the user can do other than
             // pass it
             if (loot.WeeklyLootItem && (byte)loot.RollState != 20 && checkWeekly)
@@ -506,7 +489,7 @@ internal static class Roller
         }
     }
 
-    public static unsafe int ItemCount(uint itemId)
+    private static unsafe int ItemCount(uint itemId)
     {
         return InventoryManager.Instance()->GetInventoryItemCount(itemId);
     }
@@ -521,28 +504,15 @@ internal static class Roller
     {
         var sealsSheet = Svc.Data.GetExcelSheet<GCSupplyDutyReward>();
         uint ilvl = 0;
-        foreach (var row in sealsSheet)
-            if (row.SealsExpertDelivery < sealAmnt)
-                ilvl = row.RowId;
+        foreach (var row in sealsSheet.Where(row => row.SealsExpertDelivery < sealAmnt))
+            ilvl = row.RowId;
 
         return ilvl;
     }
 
-    // ########################################
-    // New Shit to allow IPC call
-    // ########################################
-
-    internal enum LlDecision : int
-    {
-        DoNothing = 0,
-        Pass = 1,
-        Greed = 2,
-        Need = 3
-    }
-
     internal static LlDecision WhatWouldLlDo(uint itemId)
     {
-        RollResult baseIntent = LazyLoot.Config.FulfRoll switch
+        var baseIntent = LazyLoot.Config.FulfRoll switch
         {
             0 => RollResult.Needed,
             1 => RollResult.Greeded,
@@ -566,13 +536,14 @@ internal static class Roller
         };
     }
 
-    private static unsafe RollResult? GetCustomRuleByItemId(uint itemId)
+    private static RollResult? GetCustomRuleByItemId(uint itemId)
     {
         var lootItem = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId);
         if (lootItem == null || (lootItem.Value.IsUnique && ItemCount(itemId) > 0)) return RollResult.Passed;
 
-        var itemCustom = LazyLoot.Config.Restrictions.Items.FirstOrDefault(x => x.Id == itemId);
-        if (itemCustom is { Enabled: true }) return itemCustom.RollRule;
+        var restrictions = LazyLoot.Config.GetActiveRestrictionGroup();
+        var itemCustom = LazyLoot.Config.FindEnabledItemRestriction(itemId);
+        if (itemCustom != null) return itemCustom.RollRule;
 
         return null;
     }
@@ -595,5 +566,15 @@ internal static class Roller
 
         var filtered = results.Where(r => r != RollResult.UnAwarded).ToArray();
         return filtered.Length == 0 ? RollResult.UnAwarded : ResultMerge(filtered);
+    }
+
+    private unsafe delegate bool RollItemRaw(Loot* lootIntPtr, RollResult option, uint lootItemIndex);
+
+    internal enum LlDecision
+    {
+        DoNothing = 0,
+        Pass = 1,
+        Greed = 2,
+        Need = 3
     }
 }

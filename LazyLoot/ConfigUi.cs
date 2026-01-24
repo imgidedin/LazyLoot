@@ -1,9 +1,16 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using System.Runtime.InteropServices;
+using System.Text.Json;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Colors;
 using Dalamud.Interface.Components;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Windowing;
+using Dalamud.Utility;
 using ECommons;
 using ECommons.DalamudServices;
 using ECommons.ImGuiMethods;
@@ -11,47 +18,19 @@ using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using Lumina.Excel;
 using Lumina.Excel.Sheets;
 using PunishLib.ImGuiMethods;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Numerics;
-using System.Runtime.InteropServices;
-using System.Text.Json;
-using ECommons.Reflection;
 
 namespace LazyLoot;
 
 public class ConfigUi : Window, IDisposable
 {
-    private static List<CustomRestriction> _importedRestrictions;
     private static int _debugValue;
     private readonly WindowSystem _windowSystem = new();
-
-    [StructLayout(LayoutKind.Explicit, Size = 0x40)]
-    private struct DebugLootItem
-    {
-        [FieldOffset(0x00)] public uint ChestObjectId;
-        [FieldOffset(0x04)] public uint ChestItemIndex; // This loot item's index in the chest it came from
-        [FieldOffset(0x08)] public uint ItemId;
-        [FieldOffset(0x0C)] public ushort ItemCount;
-
-        [FieldOffset(0x1C)] public uint GlamourItemId;
-        [FieldOffset(0x20)] public RollState RollState;
-        [FieldOffset(0x24)] public RollResult RollResult;
-        [FieldOffset(0x28)] public byte RollValue;
-        [FieldOffset(0x34)] public byte Unk1;
-        [FieldOffset(0x38)] public byte Unk2;
-        [FieldOffset(0x2C)] public float Time;
-        [FieldOffset(0x30)] public float MaxTime;
-
-        [FieldOffset(0x38)] public LootMode LootMode;
-    }
 
     public ConfigUi() : base("Lazy Loot Config")
     {
         SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = new Vector2(400, 200),
+            MinimumSize = new Vector2(680, 380),
             MaximumSize = new Vector2(99999, 99999)
         };
         _windowSystem.AddWindow(this);
@@ -84,9 +63,9 @@ public class ConfigUi : Window, IDisposable
                 ImGui.EndTabItem();
             }
 
-            if (ImGui.BeginTabItem("User Restriction"))
+            if (ImGui.BeginTabItem("Restrictions"))
             {
-                DrawUserRestriction();
+                DrawRestrictions();
                 ImGui.EndTabItem();
             }
 
@@ -128,15 +107,13 @@ public class ConfigUi : Window, IDisposable
         {
             var loot = Loot.Instance();
             if (loot != null)
-            {
                 foreach (var item in loot->Items)
                 {
                     if (item.ItemId == 0) continue;
                     var casted = (DebugLootItem*)&item;
                     ImGui.PushID($"{casted->ItemId}");
-                    Dalamud.Utility.Util.ShowStruct(casted);
+                    Util.ShowStruct(casted);
                 }
-            }
         }
 
         // This is here in case we ever need to debug faded copies again.
@@ -198,7 +175,7 @@ public class ConfigUi : Window, IDisposable
         ImGui.NextColumn();
         ImGui.Text("Pass on things you haven't rolled for yet.");
         ImGui.NextColumn();
-        ImGui.Columns(1);
+        ImGui.Columns();
     }
 
     private static void DrawRollingDelay()
@@ -370,16 +347,13 @@ public class ConfigUi : Window, IDisposable
             ? Svc.Data.GetExcelSheet<ContentType>()
                 .FirstOrDefault(x => x.RowId == 28).Icon
             : duty.ContentType.Value.Icon;
-        if (icon == 0)
-        {
-            return 0;
-        }
+        if (icon == 0) return 0;
 
         var itemIcon = GetItemIcon(icon);
         return itemIcon?.Handle ?? default;
     }
 
-    private static void DrawUserRestrictionItems()
+    private static void DrawUserRestrictionItems(RestrictionGroup restrictions)
     {
         ImGui.Dummy(new Vector2(0, 6));
         ImGuiEx.LineCentered("ItemRestrictionWarning",
@@ -392,8 +366,8 @@ public class ConfigUi : Window, IDisposable
         ImGui.Dummy(new Vector2(0, 6));
         ImGui.Separator();
         ImGui.Dummy(new Vector2(0, 6));
-        
-        var items = LazyLoot.Config.Restrictions.Items;
+
+        var items = restrictions.Items;
 
         if (items.Count == 0)
         {
@@ -487,7 +461,7 @@ public class ConfigUi : Window, IDisposable
                     ImGui.TableNextColumn();
                     if (ImGui.Button($"Remove##{item.Id}"))
                     {
-                        LazyLoot.Config.Restrictions.Items.RemoveAt(i);
+                        restrictions.Items.RemoveAt(i);
                         LazyLoot.Config.Save();
                         break;
                     }
@@ -498,54 +472,27 @@ public class ConfigUi : Window, IDisposable
         }
 
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(2, 0));
-        if (ImGui.Button("Export", new Vector2(60, 0)))
-        {
-            var json = System.Text.Json.JsonSerializer.Serialize(LazyLoot.Config.Restrictions.Items);
-            ImGui.SetClipboardText(json);
-            Notify.Success("Item Restrictions settings copied to clipboard!");
-        }
 
-        ImGui.SameLine();
-        if (ImGui.Button("Import", new Vector2(60, 0)))
-        {
-            try
-            {
-                bool userImported = ImportFromClipboard("import_item_confirmation");
-                if (!userImported)
-                {
-                    Notify.Error("Failed to import item restriction settings - invalid format");
-                }
-            }
-            catch (Exception e)
-            {
-                e.Log();
-            }
-        }
-
-        ImGui.SameLine();
-        
         var itemSheet = Svc.Data.GetExcelSheet<Item>();
         Utils.PopupListButton(
-            buttonLabel: "Add item...",
-            popupId: "item_search_add",
-            popupTitle: "Search for item:",
-            getResults: q =>
+            "Add item...",
+            "item_search_add",
+            "Search for item:",
+            q =>
             {
                 if (uint.TryParse(q, out var searchId))
-                {
                     return itemSheet
                         .Where(x => x.RowId == searchId
                                     && x is { RowId: > 0, Name.IsEmpty: false }
-                                    && LazyLoot.Config.Restrictions.Items.All(d => d.Id != x.RowId));
-                }
+                                    && items.All(d => d.Id != x.RowId));
 
                 return itemSheet
                     .Where(x =>
                         x.Name.ToString().Contains(q, StringComparison.OrdinalIgnoreCase)
                         && x is { RowId: > 0, Name.IsEmpty: false }
-                        && LazyLoot.Config.Restrictions.Items.All(d => d.Id != x.RowId));
+                        && items.All(d => d.Id != x.RowId));
             },
-            getItemLabel: item => $" {item.Name} (ID: {item.RowId})",
+            item => $" {item.Name} (ID: {item.RowId})",
             renderItem: item =>
             {
                 var icon = GetItemIcon(item.Icon);
@@ -554,13 +501,14 @@ public class ConfigUi : Window, IDisposable
                     ImGui.Image(icon.Handle, new Vector2(16, 16));
                     ImGui.SameLine();
                 }
+
                 if (ImGui.IsItemHovered())
                     ImGui.SetTooltip(item.Name.ToString());
                 ImGui.SameLine();
             },
             onSelect: duty =>
             {
-                LazyLoot.Config.Restrictions.Items.Add(new CustomRestriction
+                restrictions.Items.Add(new CustomRestriction
                 {
                     Id = duty.RowId,
                     Enabled = true,
@@ -571,106 +519,108 @@ public class ConfigUi : Window, IDisposable
         );
 
         ImGui.PopStyleVar();
-        
-
-        if (ImGui.BeginPopup("import_item_confirmation", ImGuiWindowFlags.AlwaysAutoResize))
-        {
-            bool validation = ValidateImport(itemSheet);
-            if (!validation)
-            {
-                ImGui.CloseCurrentPopup();
-            }
-
-            ImGui.Text("Are you sure you want to replace your current item restrictions configuration?");
-            ImGuiEx.LineCentered(() => ImGuiEx.TextUnderlined("This action cannot be undone."));
-            ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(40 / 255f, 167 / 255f, 69 / 255f, 1.0f));
-            if (ImGui.Button("YES", new Vector2(100f, 0)))
-            {
-                if (_importedRestrictions != null)
-                {
-                    LazyLoot.Config.Restrictions.Items = _importedRestrictions;
-                    LazyLoot.Config.Save();
-                    Notify.Success("Imported Item Restrictions successfully!");
-                }
-
-                ImGui.CloseCurrentPopup();
-            }
-
-            ImGui.PopStyleColor();
-            ImGui.SameLine();
-            ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(220 / 255f, 53 / 255f, 69 / 255f, 1.0f));
-            if (ImGui.Button("NO", new Vector2(-1, 0)))
-            {
-                ImGui.CloseCurrentPopup();
-            }
-
-            ImGui.PopStyleColor();
-            ImGui.EndPopup();
-        }
     }
 
-    private static bool ValidateImport<T>(ExcelSheet<T> sheet) where T : struct, IExcelRow<T>
+    private static bool ValidateImport<T>(List<CustomRestriction>? imported, ExcelSheet<T> sheet, string idLabel)
+        where T : struct, IExcelRow<T>
     {
-        bool bail = false;
-        foreach (var item in _importedRestrictions)
+        if (imported == null)
+            return false;
+
+        var bail = false;
+        foreach (var item in imported)
         {
             if (sheet.Any(x => x.RowId == item.Id)) continue;
             bail = true;
-            Notify.Error($"Imported restriction contains invalid item ID: {item.Id}. Import cancelled.");
+            Notify.Error($"Imported restriction contains invalid {idLabel} ID: {item.Id}. Import cancelled.");
         }
 
         if (bail)
-        {
-            ImGui.CloseCurrentPopup();
             return false;
-        }
 
         return true;
     }
 
-    private static bool ImportFromClipboard(string popupname)
+    private static void ImportPresetFromClipboard(List<RestrictionPreset> presets)
     {
         var clipboardText = ImGui.GetClipboardText();
         if (string.IsNullOrEmpty(clipboardText))
         {
             Notify.Error("Nothing to import on your clipboard");
-            return false;
+            return;
         }
 
+        RestrictionPresetExport? imported;
         try
         {
-            var result = JsonSerializer.Deserialize<List<CustomRestriction>>(clipboardText);
-            if (result != null)
-            {
-                _importedRestrictions = result;
-                ImGui.OpenPopup(popupname);
-            }
+            imported = JsonSerializer.Deserialize<RestrictionPresetExport>(clipboardText);
         }
         catch (Exception e)
         {
             e.Log();
-            return false;
+            Notify.Error("Failed to import preset - invalid format");
+            return;
         }
 
-        return true;
+        if (imported == null)
+        {
+            Notify.Error("Failed to import preset - invalid format");
+            return;
+        }
+
+        var restrictions = imported.Restrictions;
+        var itemSheet = Svc.Data.GetExcelSheet<Item>();
+        var dutySheet = Svc.Data.GetExcelSheet<ContentFinderCondition>();
+        if (!ValidateImport(restrictions.Items, itemSheet, "item") ||
+            !ValidateImport(restrictions.Duties, dutySheet, "duty"))
+            return;
+
+        var name = MakeUniquePresetName(imported.Name, presets);
+        var preset = new RestrictionPreset
+        {
+            Name = name,
+            Enabled = imported.Enabled,
+            Restrictions = restrictions
+        };
+        presets.Add(preset);
+        LazyLoot.Config.ActiveRestrictionPresetId = preset.Id;
+        LazyLoot.Config.Save();
+        Notify.Success($"Imported preset \"{name}\" successfully!");
     }
 
-    private static void DrawUserRestrictionDuties()
+    private static string MakeUniquePresetName(string name, List<RestrictionPreset> presets)
     {
-        
+        var trimmed = string.IsNullOrWhiteSpace(name) ? "Imported Preset" : name.Trim();
+        if (presets.All(p => !string.Equals(p.Name, trimmed, StringComparison.OrdinalIgnoreCase)))
+            return trimmed;
+
+        var suffix = 1;
+        string candidate;
+        do
+        {
+            candidate = $"{trimmed} ({suffix})";
+            suffix++;
+        } while (presets.Any(p => string.Equals(p.Name, candidate, StringComparison.OrdinalIgnoreCase)));
+
+        return candidate;
+    }
+
+    private static void DrawUserRestrictionDuties(RestrictionGroup restrictions)
+    {
         ImGui.Dummy(new Vector2(0, 6));
         ImGuiEx.LineCentered("DutyRestrictionWarning",
             () =>
             {
                 ImGui.PushStyleColor(ImGuiCol.Text, ImGuiColors.DalamudYellow);
-                ImGui.TextWrapped("These rules override the main restriction settings, but is overriden by the item restriction settings if they happen to collide.");
+                ImGui.TextWrapped(
+                    "These rules override the main restriction settings, but is overriden by the item restriction settings if they happen to collide.");
                 ImGui.PopStyleColor();
             });
         ImGui.Dummy(new Vector2(0, 6));
         ImGui.Separator();
         ImGui.Dummy(new Vector2(0, 6));
 
-        var duties = LazyLoot.Config.Restrictions.Duties;
+        var duties = restrictions.Duties;
 
         if (duties.Count == 0)
         {
@@ -765,7 +715,7 @@ public class ConfigUi : Window, IDisposable
                     ImGui.TableNextColumn();
                     if (ImGui.Button($"Remove##{duty.Id}"))
                     {
-                        LazyLoot.Config.Restrictions.Duties.RemoveAt(i);
+                        restrictions.Duties.RemoveAt(i);
                         LazyLoot.Config.Save();
                         break;
                     }
@@ -776,53 +726,26 @@ public class ConfigUi : Window, IDisposable
         }
 
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(2, 0));
-        if (ImGui.Button("Export", new Vector2(60, 0)))
-        {
-            var json = System.Text.Json.JsonSerializer.Serialize(LazyLoot.Config.Restrictions.Duties);
-            ImGui.SetClipboardText(json);
-            Notify.Success("Duty Restrictions copied to clipboard!");
-        }
-
-        ImGui.SameLine();
-        if (ImGui.Button("Import", new Vector2(60, 0)))
-        {
-            try
-            {
-                bool userImported = ImportFromClipboard("import_duty_confirmation");
-                if (!userImported)
-                {
-                    Notify.Error("Failed to import duty restriction settings - invalid format");
-                }
-            }
-            catch (Exception e)
-            {
-                e.Log();
-            }
-        }
-
-        ImGui.SameLine();
         var dutySheet = Svc.Data.GetExcelSheet<ContentFinderCondition>();
         Utils.PopupListButton(
-            buttonLabel: "Add duty...",
-            popupId: "duty_search_add",
-            popupTitle: "Search for duty:",
-            getResults: q =>
+            "Add duty...",
+            "duty_search_add",
+            "Search for duty:",
+            q =>
             {
                 if (uint.TryParse(q, out var searchId))
-                {
                     return dutySheet
                         .Where(x => x.RowId == searchId
                                     && x is { RowId: > 0, Name.IsEmpty: false }
-                                    && LazyLoot.Config.Restrictions.Duties.All(d => d.Id != x.RowId));
-                }
+                                    && duties.All(d => d.Id != x.RowId));
 
                 return dutySheet
                     .Where(x =>
                         x.Name.ToString().Contains(q, StringComparison.OrdinalIgnoreCase)
                         && x is { RowId: > 0, Name.IsEmpty: false }
-                        && LazyLoot.Config.Restrictions.Duties.All(d => d.Id != x.RowId));
+                        && duties.All(d => d.Id != x.RowId));
             },
-            getItemLabel: duty => $" {duty.Name} (ID: {duty.RowId})",
+            duty => $" {duty.Name} (ID: {duty.RowId})",
             renderItem: duty =>
             {
                 ImGui.Image(GetDutyIcon(duty), new Vector2(16, 16));
@@ -832,7 +755,7 @@ public class ConfigUi : Window, IDisposable
             },
             onSelect: duty =>
             {
-                LazyLoot.Config.Restrictions.Duties.Add(new CustomRestriction
+                restrictions.Duties.Add(new CustomRestriction
                 {
                     Id = duty.RowId,
                     Enabled = true,
@@ -843,62 +766,156 @@ public class ConfigUi : Window, IDisposable
         );
 
         ImGui.PopStyleVar();
-
-        if (ImGui.BeginPopup("import_duty_confirmation", ImGuiWindowFlags.AlwaysAutoResize))
-        {
-            var validation = ValidateImport(dutySheet);
-            if (!validation)
-            {
-                ImGui.CloseCurrentPopup();
-            }
-
-            ImGui.Text("Are you sure you want to replace your current duty restrictions configuration?");
-            ImGuiEx.LineCentered(() => ImGuiEx.TextUnderlined("This action cannot be undone."));
-            ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(40 / 255f, 167 / 255f, 69 / 255f, 1.0f));
-            if (ImGui.Button("YES", new Vector2(100f, 0)))
-            {
-                if (_importedRestrictions != null)
-                {
-                    duties = _importedRestrictions;
-                    LazyLoot.Config.Save();
-                    Notify.Success("Imported Duty Restrictions successfully!");
-                }
-
-                ImGui.CloseCurrentPopup();
-            }
-
-            ImGui.PopStyleColor();
-            ImGui.SameLine();
-            ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(220 / 255f, 53 / 255f, 69 / 255f, 1.0f));
-            if (ImGui.Button("NO", new Vector2(-1, 0)))
-            {
-                ImGui.CloseCurrentPopup();
-            }
-
-            ImGui.PopStyleColor();
-            ImGui.EndPopup();
-        }
     }
 
-    private static void DrawUserRestriction()
+    private static void DrawRestrictions()
     {
-        if (ImGui.BeginTabBar("PerItemDutyConfigTabs"))
+        if (!ImGui.BeginTabBar("RestrictionTabs")) return;
+        
+        if (ImGui.BeginTabItem("Everywhere"))
         {
-            if (ImGui.BeginTabItem("Everywhere..."))
+            DrawUserRestrictionEverywhere();
+            ImGui.EndTabItem();
+        }
+
+        if (ImGui.BeginTabItem("Custom Restrictions"))
+        {
+            DrawCustomRestrictions();
+            ImGui.EndTabItem();
+        }
+
+        ImGui.EndTabBar();
+    }
+
+    private static void DrawCustomRestrictions()
+    {
+        var config = LazyLoot.Config;
+        if (config.EnsureActiveRestrictionPreset())
+            config.Save();
+
+        var presets = config.RestrictionPresets;
+        var activePreset = config.GetActiveRestrictionPreset();
+
+        if (!ImGui.BeginTable("CustomRestrictionsLayout", 2)) return;
+        
+        ImGui.TableSetupColumn("PresetList", ImGuiTableColumnFlags.WidthFixed, 200f);
+        ImGui.TableSetupColumn("PresetEditor", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableNextRow();
+
+        ImGui.TableSetColumnIndex(0);
+        DrawPresetList(presets, activePreset);
+
+        ImGui.TableSetColumnIndex(1);
+        DrawPresetEditor(activePreset);
+
+        ImGui.EndTable();
+    }
+
+    private static void DrawPresetList(List<RestrictionPreset> presets, RestrictionPreset activePreset)
+    {
+        var footerHeight = ImGui.GetFrameHeightWithSpacing() * 1.2;
+        ImGui.BeginChild("PresetList", new Vector2(0, (float)-footerHeight), true);
+        foreach (var preset in presets)
+        {
+            ImGui.PushID(preset.Id.ToString());
+            var enabled = preset.Enabled;
+            if (ImGui.Checkbox("##PresetEnabled", ref enabled))
             {
-                DrawUserRestrictionEverywhere();
+                preset.Enabled = enabled;
+                LazyLoot.Config.Save();
+            }
+
+            ImGui.SameLine();
+            var isDisabled = !preset.Enabled;
+            if (isDisabled)
+                ImGui.PushStyleColor(ImGuiCol.Text, ImGui.GetStyle().Colors[(int)ImGuiCol.TextDisabled]);
+            if (ImGui.Selectable(preset.Name, preset.Id == activePreset.Id))
+            {
+                LazyLoot.Config.ActiveRestrictionPresetId = preset.Id;
+                LazyLoot.Config.Save();
+            }
+            if (isDisabled)
+                ImGui.PopStyleColor();
+
+            ImGui.PopID();
+        }
+
+        ImGui.EndChild();
+
+        if (ImGui.Button("New##PresetNew", new Vector2(60f, 0f)))
+        {
+            var name = MakeUniquePresetName("New Preset", presets);
+            var preset = new RestrictionPreset { Name = name };
+            presets.Add(preset);
+            LazyLoot.Config.ActiveRestrictionPresetId = preset.Id;
+            LazyLoot.Config.Save();
+        }
+
+        ImGui.SameLine();
+        var ctrlHeld = ImGui.GetIO().KeyCtrl;
+        ImGui.BeginDisabled(!ctrlHeld);
+        if (ImGui.Button("Delete##PresetDelete", new Vector2(60f, 0f)))
+        {
+            if (presets.Count <= 1)
+            {
+                activePreset.Name = "Default";
+                activePreset.Enabled = true;
+                activePreset.Restrictions = new RestrictionGroup();
+                LazyLoot.Config.ActiveRestrictionPresetId = activePreset.Id;
+            }
+            else
+            {
+                presets.RemoveAll(p => p.Id == activePreset.Id);
+                LazyLoot.Config.EnsureActiveRestrictionPreset();
+            }
+
+            LazyLoot.Config.Save();
+        }
+
+        ImGui.EndDisabled();
+        if (!ctrlHeld && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip("Hold CTRL to allow preset deletion.");
+
+        ImGui.SameLine();
+        if (ImGui.Button("Import##PresetImport", new Vector2(60f, 0f))) ImportPresetFromClipboard(presets);
+    }
+
+    private static void DrawPresetEditor(RestrictionPreset activePreset)
+    {
+        var presetName = activePreset.Name;
+        ImGui.SetNextItemWidth(260f);
+        if (ImGui.InputText("Preset Name", ref presetName, 64))
+        {
+            activePreset.Name = string.IsNullOrWhiteSpace(presetName) ? "Preset" : presetName.Trim();
+            LazyLoot.Config.Save();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Export Preset", new Vector2(110f, 0f)))
+        {
+            var json = JsonSerializer.Serialize(new RestrictionPresetExport
+            {
+                Name = activePreset.Name,
+                Enabled = activePreset.Enabled,
+                Restrictions = activePreset.Restrictions
+            });
+            ImGui.SetClipboardText(json);
+            Notify.Success("Preset copied to clipboard!");
+        }
+
+        ImGui.Separator();
+
+        if (ImGui.BeginTabBar("PresetRestrictionsTabs"))
+        {
+            if (ImGui.BeginTabItem("Items"))
+            {
+                DrawUserRestrictionItems(activePreset.Restrictions);
                 ImGui.EndTabItem();
             }
 
-            if (ImGui.BeginTabItem("... but for these Items"))
+            if (ImGui.BeginTabItem("Duties"))
             {
-                DrawUserRestrictionItems();
-                ImGui.EndTabItem();
-            }
-
-            if (ImGui.BeginTabItem("... but for these Duties"))
-            {
-                DrawUserRestrictionDuties();
+                DrawUserRestrictionDuties(activePreset.Restrictions);
                 ImGui.EndTabItem();
             }
 
@@ -954,7 +971,7 @@ public class ConfigUi : Window, IDisposable
         ImGui.NextColumn();
         ImGui.Text("Set FULF to Passing mode, where it will follow the /lazy pass rules.");
         ImGui.NextColumn();
-        ImGui.Columns(1);
+        ImGui.Columns();
         ImGui.Separator();
         ImGui.Checkbox("###FulfEnabled", ref LazyLoot.Config.FulfEnabled);
         ImGui.SameLine();
@@ -983,5 +1000,32 @@ public class ConfigUi : Window, IDisposable
 
         if (LazyLoot.Config.FulfMaxRollDelayInSeconds <= LazyLoot.Config.FulfMinRollDelayInSeconds)
             LazyLoot.Config.FulfMaxRollDelayInSeconds = LazyLoot.Config.FulfMinRollDelayInSeconds + 0.1f;
+    }
+
+    [StructLayout(LayoutKind.Explicit, Size = 0x40)]
+    private struct DebugLootItem
+    {
+        [FieldOffset(0x00)] public uint ChestObjectId;
+        [FieldOffset(0x04)] public uint ChestItemIndex; // This loot item's index in the chest it came from
+        [FieldOffset(0x08)] public uint ItemId;
+        [FieldOffset(0x0C)] public ushort ItemCount;
+
+        [FieldOffset(0x1C)] public uint GlamourItemId;
+        [FieldOffset(0x20)] public RollState RollState;
+        [FieldOffset(0x24)] public RollResult RollResult;
+        [FieldOffset(0x28)] public byte RollValue;
+        [FieldOffset(0x34)] public byte Unk1;
+        [FieldOffset(0x38)] public byte Unk2;
+        [FieldOffset(0x2C)] public float Time;
+        [FieldOffset(0x30)] public float MaxTime;
+
+        [FieldOffset(0x38)] public LootMode LootMode;
+    }
+
+    private sealed class RestrictionPresetExport
+    {
+        public string Name { get; init; } = string.Empty;
+        public bool Enabled { get; init; } = true;
+        public RestrictionGroup Restrictions { get; init; } = new();
     }
 }
