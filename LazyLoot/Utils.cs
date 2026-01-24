@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.Utility;
 using ECommons.ImGuiMethods;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 
@@ -64,13 +63,15 @@ internal static class Utils
         Vector2? listSize = null,
         int maxResults = 100,
         float debounceSeconds = 0.1f,
-        int inputMaxLength = 100)
+        int inputMaxLength = 100,
+        string? noteText = null)
     {
         var state = GetState<T>(popupId);
 
         if (ImGui.Button(buttonLabel))
         {
             state.FocusOnOpen = true;
+            state.LastSearchTime = 0;
             ImGui.OpenPopup(popupId);
         }
 
@@ -107,6 +108,18 @@ internal static class Utils
                 .Max();
 
         var width = MathF.Max(minWidth, widest + 30f);
+        if (listSize is { X: > 0 })
+            width = listSize.Value.X;
+
+        if (!string.IsNullOrEmpty(noteText))
+        {
+            var wrapPos = ImGui.GetCursorPosX() + width;
+            ImGui.PushTextWrapPos(wrapPos);
+            ImGui.TextUnformatted(noteText);
+            ImGui.PopTextWrapPos();
+            ImGui.Dummy(new Vector2(0, 4));
+        }
+
         ImGui.SetNextItemWidth(width);
 
         if (state.FocusOnOpen)
@@ -114,7 +127,7 @@ internal static class Utils
             ImGui.SetKeyboardFocusHere();
             state.FocusOnOpen = false;
         }
-        
+
         ImGui.InputText("##popupListSearch", ref state.Query, inputMaxLength);
         ImGui.Dummy(new Vector2(0, 4));
 

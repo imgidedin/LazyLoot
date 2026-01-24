@@ -239,11 +239,6 @@ public class Configuration : IPluginConfiguration
         return RestrictionPresets[0];
     }
 
-    public RestrictionGroup GetActiveRestrictionGroup()
-    {
-        return GetActiveRestrictionPreset().Restrictions;
-    }
-
     public CustomRestriction? FindEnabledItemRestriction(uint itemId)
     {
         RestrictionPresets ??= [];

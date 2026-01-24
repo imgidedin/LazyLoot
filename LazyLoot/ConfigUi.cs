@@ -19,6 +19,8 @@ using ECommons.ImGuiMethods;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using Lumina.Excel;
 using Lumina.Excel.Sheets;
+using LuminaSupplemental.Excel.Model;
+using LuminaSupplemental.Excel.Services;
 using PunishLib.ImGuiMethods;
 
 namespace LazyLoot;
@@ -26,7 +28,15 @@ namespace LazyLoot;
 public class ConfigUi : Window, IDisposable
 {
     private static int _debugValue;
+    private static int _fadedCopyItemId;
+
+    private static Dictionary<uint, HashSet<uint>>? _dutyChestItemMap;
+
+    private readonly List<Item> _debugChestItemRows = [];
     private readonly WindowSystem _windowSystem = new();
+    private DebugPanel _activeDebugPanel = DebugPanel.ItemUnlock;
+    private ContentFinderCondition? _debugSelectedDuty;
+    private string _lazyTestInput = string.Empty;
 
     public ConfigUi() : base("Lazy Loot Config")
     {
@@ -93,44 +103,328 @@ public class ConfigUi : Window, IDisposable
         }).GetWrapOrDefault();
     }
 
-    private unsafe void DrawDebug()
+    private void DrawDebug()
     {
-        if (ImGui.CollapsingHeader("Is Item Unlocked?"))
+        if (!ImGui.BeginTable("DebugLayout", 2)) return;
+
+        ImGui.TableSetupColumn("DebugList", ImGuiTableColumnFlags.WidthFixed, 200f);
+        ImGui.TableSetupColumn("DebugPanel", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableNextRow();
+
+        ImGui.TableSetColumnIndex(0);
+        DrawDebugList();
+
+        ImGui.TableSetColumnIndex(1);
+        DrawDebugPanel();
+
+        ImGui.EndTable();
+    }
+
+    private void DrawDebugList()
+    {
+        ImGui.BeginChild("DebugList", new Vector2(0, 0), true);
+        DrawDebugListItem("Is Item Unlocked?", DebugPanel.ItemUnlock);
+        DrawDebugListItem("Lazy Test Item", DebugPanel.LazyTestItem);
+        DrawDebugListItem("Faded Copies", DebugPanel.FadedCopies);
+        DrawDebugListItem("Loot", DebugPanel.Loot);
+        DrawDebugListItem("Duty Items", DebugPanel.DutyItems);
+        ImGui.EndChild();
+    }
+
+    private void DrawDebugListItem(string label, DebugPanel panel)
+    {
+        if (ImGui.Selectable(label, _activeDebugPanel == panel))
+            _activeDebugPanel = panel;
+    }
+
+    private void DrawDebugPanel()
+    {
+        switch (_activeDebugPanel)
         {
-            ImGui.InputInt("Debug Value Tester", ref _debugValue);
-            ImGui.Text($"Is Unlocked: {Roller.IsItemUnlocked((uint)_debugValue)}");
+            case DebugPanel.ItemUnlock:
+                DrawDebugItemUnlock();
+                break;
+            case DebugPanel.LazyTestItem:
+                DrawDebugLazyTestItem();
+                break;
+            case DebugPanel.FadedCopies:
+                DrawDebugFadedCopies();
+                break;
+            case DebugPanel.Loot:
+                DrawDebugLoot();
+                break;
+            case DebugPanel.DutyItems:
+                DrawDebugDutyItems();
+                break;
+            default:
+                DrawDebugItemUnlock();
+                break;
+        }
+    }
+
+    private static void DrawDebugItemUnlock()
+    {
+        ImGui.TextUnformatted("Is Item Unlocked?");
+        ImGui.Separator();
+        ImGui.InputInt("Debug Value Tester", ref _debugValue);
+        ImGui.Text($"Is Unlocked: {Roller.IsItemUnlocked((uint)_debugValue)}");
+    }
+
+    private void DrawDebugLazyTestItem()
+    {
+        ImGui.TextUnformatted("Lazy Test Item");
+        ImGui.Separator();
+
+        ImGui.SetNextItemWidth(260f);
+        var runTest = ImGui.InputText("Item ID or name", ref _lazyTestInput, 128,
+            ImGuiInputTextFlags.EnterReturnsTrue);
+        ImGui.SameLine();
+        if (ImGui.Button("Run Test") || runTest)
+            LazyLoot.TestWhatWouldLlDo(_lazyTestInput);
+
+        ImGui.TextWrapped("Outputs the same result as /lazy test item to chat.");
+    }
+
+    private static void DrawDebugFadedCopies()
+    {
+        ImGui.TextUnformatted("Faded Copies");
+        ImGui.Separator();
+
+        ImGui.SetNextItemWidth(120f);
+        ImGui.InputInt("Faded Copy Item ID", ref _fadedCopyItemId);
+        if (ImGui.Button("Faded Copy Converter Check?"))
+        {
+            Roller.UpdateFadedCopy((uint)_fadedCopyItemId, out var orchIds);
+            Svc.Log.Debug(orchIds.Count == 0
+                ? $"No orchestrion rolls found for faded copy {_fadedCopyItemId}."
+                : $"Faded copy {_fadedCopyItemId} maps to orchestrion IDs: {string.Join(", ", orchIds)}");
         }
 
-        if (ImGui.CollapsingHeader("Loot"))
+        if (!ImGui.Button("Check all Faded Copies")) return;
+
+        foreach (var item in Svc.Data.GetExcelSheet<Item>()
+                     .Where(x => x is { FilterGroup: 12, ItemUICategory.RowId: 94 }))
         {
-            var loot = Loot.Instance();
-            if (loot != null)
-                foreach (var item in loot->Items)
-                {
-                    if (item.ItemId == 0) continue;
-                    var casted = (DebugLootItem*)&item;
-                    ImGui.PushID($"{casted->ItemId}");
-                    Util.ShowStruct(casted);
-                }
+            Roller.UpdateFadedCopy(item.RowId, out _);
+            Svc.Log.Debug($"{item.Name}");
+        }
+    }
+
+    private static unsafe void DrawDebugLoot()
+    {
+        ImGui.TextUnformatted("Loot");
+        ImGui.Separator();
+
+        var loot = Loot.Instance();
+        if (loot == null)
+        {
+            ImGui.TextUnformatted("No loot instance available.");
+            return;
         }
 
-        // This is here in case we ever need to debug faded copies again.
-        // Please do not delete <3
+        foreach (var item in loot->Items)
+        {
+            if (item.ItemId == 0) continue;
+            var casted = (DebugLootItem*)&item;
+            ImGui.PushID($"{casted->ItemId}");
+            Util.ShowStruct(casted);
+        }
+    }
 
-        //if (ImGui.Button("Faded Copy Converter Check?"))
-        //{
-        //    Roller.UpdateFadedCopy((uint)debugValue, out uint nonfaded);
-        //    Svc.Log.Debug($"Non-Faded is {nonfaded}");\
-        //}
+    private void DrawDebugDutyItems()
+    {
+        ImGui.TextUnformatted("Items from Duty");
+        ImGui.Separator();
+        var label = _debugSelectedDuty != null ? _debugSelectedDuty.Value.Name.ToString() : "None";
+        var dutySheet = Svc.Data.GetExcelSheet<ContentFinderCondition>();
+        Utils.PopupListButton(
+            $"Select a Duty (Selected: {label})",
+            "duty_search_add",
+            "Search for duty:",
+            q =>
+            {
+                if (uint.TryParse(q, out var searchId))
+                    return dutySheet
+                        .Where(x => x.RowId == searchId
+                                    && x is { RowId: > 0, Name.IsEmpty: false });
 
-        //if (ImGui.Button("Check all Faded Copies"))
-        //{
-        //    foreach (var i in Svc.Data.GetExcelSheet<Item>().Where(x => x.FilterGroup == 12 && x.ItemUICategory.Row == 94))
-        //    {
-        //        Roller.UpdateFadedCopy((uint)i.RowId, out uint nonfaded);
-        //        Svc.Log.Debug($"{i.Name}");
-        //    }
-        //}
+                return dutySheet
+                    .Where(x =>
+                        x.Name.ToString().Contains(q, StringComparison.OrdinalIgnoreCase)
+                        && x is { RowId: > 0, Name.IsEmpty: false });
+            },
+            duty => $" {duty.Name} (ID: {duty.RowId})",
+            renderItem: duty =>
+            {
+                ImGui.Image(GetDutyIcon(duty), new Vector2(16, 16));
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip(duty.Name.ToString());
+                ImGui.SameLine();
+            },
+            onSelect: duty =>
+            {
+                _debugSelectedDuty = duty;
+                LoadChestItems();
+            }
+        );
+        ImGui.Spacing();
+        DrawChestItemTable();
+    }
+
+    private static List<T> LoadItems<T>(string resourceName) where T : ICsv, new()
+    {
+        return CsvLoader.LoadResource<T>(
+            resourceName,
+            false,
+            out _,
+            out _,
+            Svc.Data.GameData,
+            Svc.Data.GameData.Options.DefaultExcelLanguage
+        );
+    }
+
+    private static IReadOnlyDictionary<uint, HashSet<uint>> GetDutyChestItemMap()
+    {
+        if (_dutyChestItemMap != null)
+            return _dutyChestItemMap;
+
+        var chestIdToDutyId = LoadItems<DungeonChest>(CsvLoader.DungeonChestResourceName)
+            .Where(c => c.ContentFinderCondition.RowId > 0)
+            .ToDictionary(c => c.RowId, c => c.ContentFinderCondition.RowId);
+
+        var map = new Dictionary<uint, HashSet<uint>>();
+
+        foreach (var chestItem in LoadItems<DungeonChestItem>(CsvLoader.DungeonChestItemResourceName)
+                     .Where(chestItem => chestItem.ItemId != 0))
+        {
+            if (!chestIdToDutyId.TryGetValue(chestItem.ChestId, out var dutyId))
+                continue;
+
+            if (!map.TryGetValue(dutyId, out var items))
+            {
+                items = [];
+                map[dutyId] = items;
+            }
+
+            items.Add(chestItem.ItemId);
+        }
+
+        _dutyChestItemMap = map;
+        return map;
+    }
+
+    private static List<Item> GetDutyChestItems(uint dutyRowId)
+    {
+        var dutyItems = GetDutyChestItemMap();
+        if (!dutyItems.TryGetValue(dutyRowId, out var itemIds) || itemIds.Count == 0)
+            return [];
+
+        var itemSheet = Svc.Data.GetExcelSheet<Item>();
+        var items = new List<Item>(itemIds.Count);
+        foreach (var itemId in itemIds)
+        {
+            var itemRow = itemSheet.GetRow(itemId);
+            if (itemRow.RowId == 0)
+                continue;
+
+            items.Add(itemRow);
+        }
+
+        items.Sort((a, b) =>
+            string.Compare(a.Name.ToString(), b.Name.ToString(), StringComparison.OrdinalIgnoreCase));
+        return items;
+    }
+
+    private static void AddDutyItemsToRestrictions(RestrictionGroup restrictions, uint dutyRowId)
+    {
+        var dutyItems = GetDutyChestItemMap();
+        if (!dutyItems.TryGetValue(dutyRowId, out var itemIds) || itemIds.Count == 0)
+            return;
+
+        var existingIds = new HashSet<uint>(restrictions.Items.Select(x => x.Id));
+        var itemSheet = Svc.Data.GetExcelSheet<Item>();
+        var added = false;
+
+        foreach (var itemId in from itemId in itemIds
+                 where itemId != 0 && !existingIds.Contains(itemId)
+                 let itemRow = itemSheet.GetRow(itemId)
+                 where itemRow.RowId != 0
+                 select itemId)
+        {
+            restrictions.Items.Add(new CustomRestriction
+            {
+                Id = itemId,
+                Enabled = true,
+                RollRule = RollResult.UnAwarded
+            });
+            existingIds.Add(itemId);
+            added = true;
+        }
+
+        if (added)
+            LazyLoot.Config.Save();
+    }
+
+    private void LoadChestItems()
+    {
+        _debugChestItemRows.Clear();
+
+        if (_debugSelectedDuty is null)
+        {
+            Svc.Log.Debug("No duty selected - chest items not loaded.");
+            return;
+        }
+
+        var duty = _debugSelectedDuty.Value;
+        _debugChestItemRows.AddRange(GetDutyChestItems(duty.RowId));
+
+        Svc.Log.Debug($"Loaded {_debugChestItemRows.Count} chest items from {duty.Name}.");
+    }
+
+    private void DrawChestItemTable()
+    {
+        if (_debugChestItemRows.Count == 0)
+        {
+            ImGui.TextUnformatted("No chest items loaded.");
+            return;
+        }
+
+        const ImGuiTableFlags flags = ImGuiTableFlags.Borders |
+                                      ImGuiTableFlags.RowBg |
+                                      ImGuiTableFlags.ScrollY |
+                                      ImGuiTableFlags.SizingFixedFit;
+
+        var size = new Vector2(0, 350);
+
+        if (!ImGui.BeginTable("##chest_items_table_fdfsdhbijsdfjd", 2, flags, size)) return;
+
+        ImGui.TableSetupColumn("Icon", ImGuiTableColumnFlags.WidthFixed, 32);
+        ImGui.TableSetupColumn("Item");
+        ImGui.TableHeadersRow();
+
+        foreach (var row in _debugChestItemRows)
+        {
+            ImGui.TableNextRow();
+
+            ImGui.TableSetColumnIndex(0);
+            var iconSize = new Vector2(24, 24);
+
+            var icon = GetItemIcon(row.Icon);
+            if (icon != null)
+            {
+                ImGui.Image(icon.Handle, new Vector2(16, 16));
+                ImGui.SameLine();
+            }
+            else
+            {
+                ImGui.Dummy(iconSize);
+            }
+
+            ImGui.TableSetColumnIndex(1);
+            ImGui.TextUnformatted($"{row.Name} ({row.RowId})");
+        }
+
+        ImGui.EndTable();
     }
 
     private static void DrawDiagnostics()
@@ -522,7 +816,11 @@ public class ConfigUi : Window, IDisposable
         }
         else
         {
-            if (ImGui.BeginTable("UserRestrictionItemsTable", 8, ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.RowBg))
+            var footerHeight = ImGui.GetFrameHeightWithSpacing() + ImGui.GetStyle().ItemSpacing.Y;
+            var tableHeight = MathF.Max(140f, ImGui.GetContentRegionAvail().Y - footerHeight);
+            if (ImGui.BeginTable("UserRestrictionItemsTable", 8,
+                    ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY,
+                    new Vector2(0, tableHeight)))
             {
                 ImGui.TableSetupColumn("Enabled", ImGuiTableColumnFlags.WidthFixed, 50f);
                 ImGui.TableSetupColumn("Icon", ImGuiTableColumnFlags.WidthFixed, 32f);
@@ -534,6 +832,7 @@ public class ConfigUi : Window, IDisposable
                 ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 70f);
                 DrawCenteredTableHeaders(8);
 
+                int? removeIndex = null;
                 for (var i = 0; i < items.Count; i++)
                 {
                     var item = items[i];
@@ -563,6 +862,13 @@ public class ConfigUi : Window, IDisposable
                     if (ImGui.IsItemHovered())
                         ImGui.SetTooltip(restrictedItem.Name.ToString());
                     TrySendItemLinkOnRightClick(restrictedItem);
+                    if (Roller.IsUnlockableAndUnlocked(restrictedItem))
+                    {
+                        ImGui.SameLine(0, 6f);
+                        ImGui.PushStyleColor(ImGuiCol.Text, ImGuiColors.HealerGreen);
+                        ImGui.TextUnformatted("(unlocked)");
+                        ImGui.PopStyleColor();
+                    }
 
                     ImGui.TableNextColumn();
                     CenterText();
@@ -598,14 +904,16 @@ public class ConfigUi : Window, IDisposable
 
                     ImGui.TableNextColumn();
                     if (ImGui.Button($"Remove##{item.Id}"))
-                    {
-                        restrictions.Items.RemoveAt(i);
-                        LazyLoot.Config.Save();
-                        break;
-                    }
+                        removeIndex = i;
                 }
 
                 ImGui.EndTable();
+
+                if (removeIndex.HasValue)
+                {
+                    restrictions.Items.RemoveAt(removeIndex.Value);
+                    LazyLoot.Config.Save();
+                }
             }
         }
 
@@ -654,6 +962,39 @@ public class ConfigUi : Window, IDisposable
                 });
                 LazyLoot.Config.Save();
             }
+        );
+
+        ImGui.SameLine();
+        var dutySheet = Svc.Data.GetExcelSheet<ContentFinderCondition>();
+        var dutyItemMap = GetDutyChestItemMap();
+        Utils.PopupListButton(
+            "Load Items from Duty...",
+            "duty_items_search_add",
+            "Search for duty:",
+            q =>
+            {
+                if (uint.TryParse(q, out var searchId))
+                    return dutySheet
+                        .Where(x => x.RowId == searchId
+                                    && x is { RowId: > 0, Name.IsEmpty: false }
+                                    && dutyItemMap.ContainsKey(x.RowId));
+
+                return dutySheet
+                    .Where(x =>
+                        x.Name.ToString().Contains(q, StringComparison.OrdinalIgnoreCase)
+                        && x is { RowId: > 0, Name.IsEmpty: false }
+                        && dutyItemMap.ContainsKey(x.RowId));
+            },
+            duty => $" {duty.Name} (ID: {duty.RowId})",
+            renderItem: duty =>
+            {
+                ImGui.Image(GetDutyIcon(duty), new Vector2(16, 16));
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip(duty.Name.ToString());
+                ImGui.SameLine();
+            },
+            onSelect: duty => { AddDutyItemsToRestrictions(restrictions, duty.RowId); },
+            noteText: "Note: Not all duties have their items mapped yet, so some drops may be missing."
         );
 
         ImGui.PopStyleVar();
@@ -777,8 +1118,11 @@ public class ConfigUi : Window, IDisposable
         }
         else
         {
+            var footerHeight = ImGui.GetFrameHeightWithSpacing() + ImGui.GetStyle().ItemSpacing.Y;
+            var tableHeight = MathF.Max(140f, ImGui.GetContentRegionAvail().Y - footerHeight);
             if (ImGui.BeginTable("UserRestrictionDutiesTable", 8,
-                    ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.RowBg))
+                    ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY,
+                    new Vector2(0, tableHeight)))
             {
                 ImGui.TableSetupColumn("Enabled", ImGuiTableColumnFlags.WidthFixed, 50f);
                 ImGui.TableSetupColumn("Type", ImGuiTableColumnFlags.WidthFixed, 32f);
@@ -790,6 +1134,7 @@ public class ConfigUi : Window, IDisposable
                 ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 60f);
                 DrawCenteredTableHeaders(8);
 
+                int? removeIndex = null;
                 for (var i = 0; i < duties.Count; i++)
                 {
                     var duty = duties[i];
@@ -853,14 +1198,16 @@ public class ConfigUi : Window, IDisposable
 
                     ImGui.TableNextColumn();
                     if (ImGui.Button($"Remove##{duty.Id}"))
-                    {
-                        restrictions.Duties.RemoveAt(i);
-                        LazyLoot.Config.Save();
-                        break;
-                    }
+                        removeIndex = i;
                 }
 
                 ImGui.EndTable();
+
+                if (removeIndex.HasValue)
+                {
+                    restrictions.Duties.RemoveAt(removeIndex.Value);
+                    LazyLoot.Config.Save();
+                }
             }
         }
 
@@ -1135,6 +1482,15 @@ public class ConfigUi : Window, IDisposable
 
         if (LazyLoot.Config.FulfMaxRollDelayInSeconds <= LazyLoot.Config.FulfMinRollDelayInSeconds)
             LazyLoot.Config.FulfMaxRollDelayInSeconds = LazyLoot.Config.FulfMinRollDelayInSeconds + 0.1f;
+    }
+
+    private enum DebugPanel
+    {
+        ItemUnlock,
+        LazyTestItem,
+        FadedCopies,
+        Loot,
+        DutyItems
     }
 
     [StructLayout(LayoutKind.Explicit, Size = 0x40)]

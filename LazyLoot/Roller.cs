@@ -164,7 +164,8 @@ internal static class Roller
         if (orchId.Count > 0)
             return true;
 
-        return item.ItemAction.Value.Action.Value.RowId is 1322 or 853 or 1013 or 2633 or 3357 or 25183;
+        return item.ItemAction.Value.Action.Value.RowId is 853 /* Minion */ or 1013 or 1322 or 2633 or 3357
+            or 20086 /* Parasols and stuff */ or 25183 /* Orchestrations */ or 37312 /* Faces we wear */;
     }
 
     private static bool IsUnlockableUnlocked(uint itemId, IReadOnlyCollection<uint> orchId)
@@ -187,13 +188,12 @@ internal static class Roller
 
         // Returns Needed to allow fulf to reduce it to whatever it is set to
         if (!IsUnlockableUnlocked(itemId, orchId)) return RollResult.Needed;
-        
+
         if (LazyLoot.Config.DiagnosticsMode)
             DuoLog.Debug(
                 $"{lootItem.Value.Name.ToString()} has been passed because it is already unlocked. [Unlockables Only - Already Unlocked]");
-        
-        return RollResult.Passed;
 
+        return RollResult.Passed;
     }
 
     private static unsafe RollResult GetPlayerRestrictByItemId(uint itemId, bool canNeed)
@@ -411,7 +411,7 @@ internal static class Roller
         return RollResult.UnAwarded;
     }
 
-    private static void UpdateFadedCopy(uint itemId, out List<uint> orchId)
+    internal static void UpdateFadedCopy(uint itemId, out List<uint> orchId, bool log = true)
     {
         orchId = [];
         var lumina = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId);
@@ -420,10 +420,18 @@ internal static class Roller
             ?.Where(x => x.Ingredient.Any(y => y.RowId == lumina.Value.RowId)).Select(x => x.ItemResult.Value)
             .FirstOrDefault();
         if (recipe == null) return;
-        if (LazyLoot.Config.DiagnosticsMode)
+        if (log && LazyLoot.Config.DiagnosticsMode)
             DuoLog.Debug(
                 $"Updating Faded Copy {lumina.Value.Name} ({itemId}) to Non-Faded {recipe.Value.Name} ({recipe.Value.RowId})");
         orchId.Add(recipe.Value.RowId);
+    }
+
+    internal static bool IsUnlockableAndUnlocked(Item item)
+    {
+        if (item.RowId == 0)
+            return false;
+        UpdateFadedCopy(item.RowId, out var orchId, false);
+        return IsUnlockableItem(item, orchId) && IsUnlockableUnlocked(item.RowId, orchId);
     }
 
     private static RollResult ResultMerge(params RollResult[] results)
@@ -581,8 +589,7 @@ internal static class Roller
     {
         var lootItem = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId);
         if (lootItem == null || (lootItem.Value.IsUnique && ItemCount(itemId) > 0)) return RollResult.Passed;
-
-        var restrictions = LazyLoot.Config.GetActiveRestrictionGroup();
+        
         var itemCustom = LazyLoot.Config.FindEnabledItemRestriction(itemId);
         if (itemCustom != null) return itemCustom.RollRule;
 

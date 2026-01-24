@@ -50,6 +50,7 @@
 		<PackageReference Include="DalamudPackager" Version="14.0.1" />
 		<PackageReference Include="ECommons" Version="3.1.0.5" />
 		<PackageReference Include="HtmlAgilityPack" Version="1.11.46" />
+		<PackageReference Include="LuminaSupplemental.Excel" Version="4.1.4" />
 		<ProjectReference Include="..\PunishLib\PunishLib\PunishLib.csproj" />
 		<Reference Include="FFXIVClientStructs">
 			<HintPath>$(DalamudLibPath)FFXIVClientStructs.dll</HintPath>

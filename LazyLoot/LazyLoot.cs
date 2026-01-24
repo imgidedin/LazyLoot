@@ -1,4 +1,7 @@
-﻿using Dalamud.Game.ClientState.Conditions;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Command;
 using Dalamud.Game.Gui.Dtr;
 using Dalamud.Game.Text;
@@ -8,18 +11,18 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using ECommons;
 using ECommons.DalamudServices;
+using ECommons.Logging;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using Lumina.Excel.Sheets;
 using PunishLib;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using ECommons.Logging;
 
 namespace LazyLoot;
 
 public class LazyLoot : IDalamudPlugin, IDisposable
 {
+    private const uint CastYourLotMessage = 5194;
+    private const uint WeeklyLockoutMessage = 4234;
+
     private static readonly RollResult[] RollArray =
     [
         RollResult.Needed,
@@ -27,23 +30,18 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         RollResult.Passed
     ];
 
-    public string Name => "LazyLoot";
-
     internal static Configuration Config;
     private static ConfigUi _configUi;
     private static IDtrBarEntry _dtrEntry;
 
-    static DateTime _nextRollTime = DateTime.Now;
-    static RollResult _rollOption = RollResult.UnAwarded;
+    private static DateTime _nextRollTime = DateTime.Now;
+    private static RollResult _rollOption = RollResult.UnAwarded;
     private static int _need, _greed, _pass;
-    
-    private const uint CastYourLotMessage = 5194;
-    private const uint WeeklyLockoutMessage = 4234;
 
     public LazyLoot(IDalamudPluginInterface pluginInterface)
     {
         ECommonsMain.Init(pluginInterface, this);
-        PunishLibMain.Init(pluginInterface, "LazyLoot", new AboutPlugin() { Developer = "53m1k0l0n/Gidedin" });
+        PunishLibMain.Init(pluginInterface, "LazyLoot", new AboutPlugin { Developer = "53m1k0l0n/Gidedin" });
 
         Config = Svc.PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         if (Config.MigrateIfNeeded())
@@ -62,23 +60,31 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         Svc.Commands.AddHandler("/lazyloot", new CommandInfo(LazyCommand)
         {
             HelpMessage = "Open Lazy Loot config.",
-            ShowInHelp = true,
+            ShowInHelp = true
         });
 
         Svc.Commands.AddHandler("/lazy", new CommandInfo(LazyCommand)
         {
             HelpMessage = "Open Lazy Loot config by default. Add need | greed | pass to roll on current items.",
-            ShowInHelp = true,
+            ShowInHelp = true
         });
 
         Svc.Commands.AddHandler("/fulf", new CommandInfo(FulfCommand)
         {
             HelpMessage =
                 "Enable/Disable FULF with /fulf [on|off] or change the loot rule with /fulf need | greed | pass.",
-            ShowInHelp = true,
+            ShowInHelp = true
         });
 
         Svc.Framework.Update += OnFrameworkUpdate;
+    }
+
+    public string Name => "LazyLoot";
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
     }
 
     private static void OnDtrClick(DtrInteractionEvent ev)
@@ -124,7 +130,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
                 break;
             }
             default:
-                RollingCommand(null!, arguments);
+                RollingCommand(arguments);
                 return;
         }
     }
@@ -140,7 +146,6 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         }
 
         if (forward)
-        {
             switch (Config.FulfRoll)
             {
                 case 2:
@@ -153,9 +158,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
                     Config.FulfEnabled = false;
                     break;
             }
-        }
         else
-        {
             switch (Config.FulfRoll)
             {
                 case 0:
@@ -168,21 +171,16 @@ public class LazyLoot : IDalamudPlugin, IDisposable
                     Config.FulfEnabled = false;
                     break;
             }
-        }
 
         Config.Save();
-    }
-
-    public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
     }
 
     protected virtual void Dispose(bool disposing)
     {
         if (!disposing)
             return;
+
+        _configUi.Dispose();
 
         Svc.PluginInterface.UiBuilder.OpenMainUi -= OnOpenConfigUi;
         Svc.PluginInterface.UiBuilder.OpenConfigUi -= OnOpenConfigUi;
@@ -215,29 +213,19 @@ public class LazyLoot : IDalamudPlugin, IDisposable
             Config.FulfEnabled = !Config.FulfEnabled;
     }
 
-    private void RollingCommand(string command, string arguments)
+    private static void RollingCommand(string arguments)
     {
         var res = GetResult(arguments);
-        if (res.HasValue)
-        {
-            _rollOption = RollArray[res.Value % 3];
-        }
+        if (res.HasValue) _rollOption = RollArray[res.Value % 3];
     }
 
     private static int? GetResult(string str)
     {
-        if (str.Contains("need", StringComparison.OrdinalIgnoreCase))
-        {
-            return 0;
-        }
-        else if (str.Contains("greed", StringComparison.OrdinalIgnoreCase))
-        {
-            return 1;
-        }
-        else if (str.Contains("pass", StringComparison.OrdinalIgnoreCase))
-        {
-            return 2;
-        }
+        if (str.Contains("need", StringComparison.OrdinalIgnoreCase)) return 0;
+
+        if (str.Contains("greed", StringComparison.OrdinalIgnoreCase)) return 1;
+
+        if (str.Contains("pass", StringComparison.OrdinalIgnoreCase)) return 2;
 
         return null;
     }
@@ -251,19 +239,15 @@ public class LazyLoot : IDalamudPlugin, IDisposable
     {
         string dtrText;
         if (Config.FulfEnabled)
-        {
             dtrText = Config.FulfRoll switch
             {
                 0 => "Needing",
                 1 => "Greeding",
                 2 => "Passing",
-                _ => throw new ArgumentOutOfRangeException(nameof(Config.FulfRoll)),
+                _ => throw new ArgumentOutOfRangeException(nameof(Config.FulfRoll))
             };
-        }
         else
-        {
             dtrText = "FULF Disabled";
-        }
 
         if (Config.UnlockablesOnlyMode)
             dtrText += " | Unlockables Only Mode";
@@ -311,7 +295,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 
     private static void ShowResult(int need, int greed, int pass)
     {
-        SeString seString = new(new List<Payload>()
+        SeString seString = new(new List<Payload>
         {
             new TextPayload("Need "),
             new UIForegroundPayload(575),
@@ -328,25 +312,13 @@ public class LazyLoot : IDalamudPlugin, IDisposable
             new TextPayload(" item" + (pass == 1 ? "" : "s") + ".")
         });
 
-        if (Config.EnableChatLogMessage)
-        {
-            Svc.Chat.Print(seString);
-        }
+        if (Config.EnableChatLogMessage) Svc.Chat.Print(seString);
 
-        if (Config.EnableErrorToast)
-        {
-            Svc.Toasts.ShowError(seString);
-        }
+        if (Config.EnableErrorToast) Svc.Toasts.ShowError(seString);
 
-        if (Config.EnableNormalToast)
-        {
-            Svc.Toasts.ShowNormal(seString);
-        }
+        if (Config.EnableNormalToast) Svc.Toasts.ShowNormal(seString);
 
-        if (Config.EnableQuestToast)
-        {
-            Svc.Toasts.ShowQuest(seString);
-        }
+        if (Config.EnableQuestToast) Svc.Toasts.ShowQuest(seString);
     }
 
     private void NoticeLoot(XivChatType type, int senderId, ref SeString sender, ref SeString message,
@@ -356,7 +328,8 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         // do a few checks to see if the message is the weekly lockout message the game sends
         if (CheckAndUpdateWeeklyLockoutDutyFlag(message)) return;
         // if not Cast your lot, then just ignore
-        if (message.TextValue != Svc.Data.GetExcelSheet<LogMessage>().First(x => x.RowId == CastYourLotMessage).Text) return;
+        if (message.TextValue !=
+            Svc.Data.GetExcelSheet<LogMessage>().First(x => x.RowId == CastYourLotMessage).Text) return;
         _nextRollTime = DateTime.Now.AddMilliseconds(new Random()
             .Next((int)(Config.FulfMinRollDelayInSeconds * 1000),
                 (int)(Config.FulfMaxRollDelayInSeconds * 1000)));
@@ -379,7 +352,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
             return false;
 
         if (message.TextValue != weeklyLockoutMessage.Value.Text) return false;
-        
+
         Config.WeeklyLockoutDutyActive = true;
         Config.WeeklyLockoutDutyTerritoryId = Svc.ClientState.TerritoryType;
         Config.Save();
@@ -432,7 +405,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         return contentFinder is { HighEndDuty: true };
     }
 
-    private static void TestWhatWouldLlDo(string idOrNameArg)
+    internal static void TestWhatWouldLlDo(string idOrNameArg)
     {
         if (string.IsNullOrWhiteSpace(idOrNameArg))
         {
@@ -463,7 +436,6 @@ public class LazyLoot : IDalamudPlugin, IDisposable
                     }));
 
                     foreach (var match in matches.Take(5))
-                    {
                         Svc.Chat.Print(new SeString(new List<Payload>
                             {
                                 new TextPayload($"[LazyLoot Item Test] :: ID {match.RowId} :: "),
@@ -473,10 +445,9 @@ public class LazyLoot : IDalamudPlugin, IDisposable
                                 new TextPayload(match.Name.ExtractText()),
                                 RawPayload.LinkTerminator,
                                 new UIForegroundPayload(0),
-                                new UIGlowPayload(0),
+                                new UIGlowPayload(0)
                             })
                         );
-                    }
 
                     return;
                 }
@@ -531,7 +502,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
                 new TextPayload(" :: "),
                 new UIForegroundPayload(decisionColor),
                 new TextPayload($"{decisionText}"),
-                new UIForegroundPayload(0),
+                new UIForegroundPayload(0)
             })
         );
     }
