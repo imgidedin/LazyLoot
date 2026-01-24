@@ -41,7 +41,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
     public LazyLoot(IDalamudPluginInterface pluginInterface)
     {
         ECommonsMain.Init(pluginInterface, this);
-        PunishLibMain.Init(pluginInterface, "LazyLoot", new AboutPlugin { Developer = "53m1k0l0n/Gidedin" });
+        PunishLibMain.Init(pluginInterface, "LazyLoot", new AboutPlugin { Developer = "Gid, Taurenkey and NightmareXIV" });
 
         Config = Svc.PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         if (Config.MigrateIfNeeded())

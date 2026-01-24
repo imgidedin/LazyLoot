@@ -541,7 +541,7 @@ public class ConfigUi : Window, IDisposable
             DrawCommandRow("/lazy need", "Roll need for all eligible items (greed/pass fallback).");
             DrawCommandRow("/lazy greed", "Roll greed for all eligible items (pass fallback).");
             DrawCommandRow("/lazy pass", "Pass on items you have not rolled for yet.");
-            DrawCommandRow("/lazy test <item id or name>", "Preview what LazyLoot would do for an item.");
+            DrawCommandRow("/lazy test item <item id or name>", "Preview what LazyLoot would do for an item in a perfect scenario (up to need and no duty restriction).");
             DrawCommandRow("/fulf on", "Enable FULF.");
             DrawCommandRow("/fulf off", "Disable FULF.");
             DrawCommandRow("/fulf", "Toggle FULF on or off.");
