@@ -7,7 +7,6 @@ using ECommons.GameHelpers;
 using ECommons.Logging;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
-using FFXIVClientStructs.FFXIV.Component.Exd;
 using Lumina.Excel.Sheets;
 
 namespace LazyLoot;
@@ -28,13 +27,15 @@ internal static class Roller
         if (!GetNextLootItem(out var index, out var loot))
             return false;
 
-        // Make sure we ignore the fulf state if the user has custom item rules
-        // Otherwise, we make sure the option is a valid roll
-        var userRules = GetPlayerCustomRestrict(loot);
-        option = userRules != null
-            ? ResultMerge(GetRestrictResult(loot), (RollResult)userRules)
-            : ResultMerge(option, GetRestrictResult(loot),
-                GetPlayerRestrictByItemId(loot.ItemId, loot.RollState == RollState.UpToNeed));
+        // Custom item/duty rules override FULF, otherwise apply player rules then clamp to max allowed.
+        var maxAllowed = GetRestrictResult(loot);
+        var customRule = GetPlayerCustomRestrict(loot);
+        var playerRule = customRule == null
+            ? GetPlayerRestrictByItemId(loot.ItemId, loot.RollState == RollState.UpToNeed)
+            : RollResult.UnAwarded;
+        DuoLog.Debug(
+            $"Rolling {loot.ItemId} with {option} and {maxAllowed} restrictions (Custom: {customRule}, Player: {playerRule}).");
+        option = ResolveFinalRoll(option, maxAllowed, customRule, playerRule);
 
         if (_itemId == loot.ItemId && index == _index)
         {
@@ -122,13 +123,12 @@ internal static class Roller
         var itemCustomRestriction = LazyLoot.Config.FindEnabledItemRestriction(loot.ItemId);
         if (itemCustomRestriction is { Enabled: true })
         {
-            if (LazyLoot.Config.DiagnosticsMode)
-            {
-                var action = itemCustomRestriction.RollRule == RollResult.Passed ? "passing" :
-                    itemCustomRestriction.RollRule == RollResult.Greeded ? "greeding" :
-                    itemCustomRestriction.RollRule == RollResult.Needed ? "needing" : "passing";
-                Svc.Log.Debug($"{lootItem.Value.Name.ToString()} is {action}. [Item Custom Restriction]");
-            }
+            if (!LazyLoot.Config.DiagnosticsMode) return itemCustomRestriction.RollRule;
+
+            var action = itemCustomRestriction.RollRule == RollResult.Passed ? "passing" :
+                itemCustomRestriction.RollRule == RollResult.Greeded ? "greeding" :
+                itemCustomRestriction.RollRule == RollResult.Needed ? "needing" : "passing";
+            Svc.Log.Debug($"{lootItem.Value.Name.ToString()} is {action}. [Item Custom Restriction]");
 
             return itemCustomRestriction.RollRule;
         }
@@ -154,6 +154,13 @@ internal static class Roller
         }
     }
 
+    private static void AddDiagnostic(List<string>? diagnostics, string message, bool gated = true)
+    {
+        if (!gated || LazyLoot.Config.DiagnosticsMode)
+            DuoLog.Debug(message);
+        diagnostics?.Add(message);
+    }
+
     private static bool ShouldPassUnlockable(bool restriction, bool onlyUntradeable, Item? item)
     {
         return restriction && (!onlyUntradeable || (onlyUntradeable && item!.Value.IsUntradable));
@@ -165,30 +172,29 @@ internal static class Roller
         return orchId.Count > 0 || LazyLoot.UnlockState.IsItemUnlockable(item);
     }
 
-    private static RollResult GetUnlockablesOnlyResult(uint itemId, Item? lootItem)
+    private static RollResult GetUnlockablesOnlyResult(uint itemId, Item? lootItem, List<string>? diagnostics = null)
     {
         if (lootItem == null)
             return RollResult.Passed;
 
         if (!IsUnlockableItem(lootItem.Value))
         {
-            if (LazyLoot.Config.DiagnosticsMode)
-                DuoLog.Debug(
-                    $"{lootItem.Value.Name.ToString()} has been passed due to Unlockables Only mode. [Unlockables Only - Not an Unlockable]");
+            AddDiagnostic(diagnostics,
+                $"{lootItem.Value.Name.ToString()} has been passed due to Unlockables Only mode. [Unlockables Only - Not an Unlockable]");
             return RollResult.Passed;
         }
 
-        // Returns Needed to allow fulf to reduce it to whatever it is set to
-        if (!IsItemUnlocked(itemId)) return RollResult.Needed;
+        // Let FULF decide how to roll on unlockables that are not unlocked yet.
+        if (!IsItemUnlocked(itemId)) return RollResult.UnAwarded;
 
-        if (LazyLoot.Config.DiagnosticsMode)
-            DuoLog.Debug(
-                $"{lootItem.Value.Name.ToString()} has been passed because it is already unlocked. [Unlockables Only - Already Unlocked]");
+        AddDiagnostic(diagnostics,
+            $"{lootItem.Value.Name.ToString()} has been passed because it is already unlocked. [Unlockables Only - Already Unlocked]");
 
         return RollResult.Passed;
     }
 
-    private static unsafe RollResult GetPlayerRestrictByItemId(uint itemId, bool canNeed)
+    private static unsafe RollResult GetPlayerRestrictByItemId(uint itemId, bool canNeed,
+        List<string>? diagnostics = null)
     {
         var lootItem = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId);
 
@@ -196,18 +202,19 @@ internal static class Roller
 
         if (lootItem == null)
         {
-            DuoLog.Debug($"Passing due to unknown item? Please give this ID to the developers: {itemId} [Unknown ID]");
+            AddDiagnostic(diagnostics,
+                $"Passing due to unknown item? Please give this ID to the developers: {itemId} [Unknown ID]",
+                gated: false);
             return RollResult.Passed;
         }
 
         if (LazyLoot.Config.UnlockablesOnlyMode)
-            return GetUnlockablesOnlyResult(itemId, lootItem);
+            return GetUnlockablesOnlyResult(itemId, lootItem, diagnostics);
 
         if (lootItem.Value.IsUnique && ItemCount(itemId) > 0)
         {
-            if (LazyLoot.Config.DiagnosticsMode)
-                DuoLog.Debug(
-                    $"{lootItem.Value.Name} has been passed due to being unique and you already possess one. [Unique Item]");
+            AddDiagnostic(diagnostics,
+                $"{lootItem.Value.Name} has been passed due to being unique and you already possess one. [Unique Item]");
             return RollResult.Passed;
         }
 
@@ -215,9 +222,8 @@ internal static class Roller
         if (LazyLoot.Config.NeverPassGlam && lootItem.Value is { LevelEquip: 1, LevelItem.Value.RowId: 1 } &&
             lootItem.Value.EquipSlotCategory.Value.RowId != 0)
         {
-            if (LazyLoot.Config.DiagnosticsMode)
-                DuoLog.Debug(
-                    $"{lootItem.Value.Name} has been set to not pass if possible due to being set to never skip glamour items. [Never Pass Glam]");
+            AddDiagnostic(diagnostics,
+                $"{lootItem.Value.Name} has been set to not pass if possible due to being set to never skip glamour items. [Never Pass Glam]");
             return RollResult.Needed;
         }
 
@@ -227,9 +233,8 @@ internal static class Roller
             if (ShouldPassUnlockable(LazyLoot.Config.RestrictionIgnoreItemUnlocked,
                     LazyLoot.Config.RestrictionAllUnlockablesOnlyUntradeables, lootItem))
             {
-                if (LazyLoot.Config.DiagnosticsMode)
-                    DuoLog.Debug(
-                        $@"{lootItem.Value.Name} has been passed due to being unlocked and you have ""Pass on all items already unlocked"" enabled. [Pass All Unlocked]");
+                AddDiagnostic(diagnostics,
+                    $@"{lootItem.Value.Name} has been passed due to being unlocked and you have ""Pass on all items already unlocked"" enabled. [Pass All Unlocked]");
                 return RollResult.Passed;
             }
 
@@ -237,9 +242,8 @@ internal static class Roller
                     LazyLoot.Config.RestrictionFadedCopyOnlyUntradeables, lootItem) &&
                 lootItem.Value is { FilterGroup: 12, ItemUICategory.RowId: 94 })
             {
-                if (LazyLoot.Config.DiagnosticsMode)
-                    DuoLog.Debug(
-                        $@"{lootItem.Value.Name} has been passed due to being unlocked and you have ""Pass on unlocked Faded Copies"" enabled. [Pass Faded Copies]");
+                AddDiagnostic(diagnostics,
+                    $@"{lootItem.Value.Name} has been passed due to being unlocked and you have ""Pass on unlocked Faded Copies"" enabled. [Pass Faded Copies]");
                 return RollResult.Passed;
             }
         }
@@ -249,9 +253,8 @@ internal static class Roller
             if (ShouldPassUnlockable(LazyLoot.Config.RestrictionIgnoreItemUnlocked,
                     LazyLoot.Config.RestrictionAllUnlockablesOnlyUntradeables, lootItem))
             {
-                if (LazyLoot.Config.DiagnosticsMode)
-                    DuoLog.Debug(
-                        $@"{lootItem.Value.Name} has been passed due to being unlocked and you have ""Pass on all items already unlocked"" enabled. [Pass All Unlocked]");
+                AddDiagnostic(diagnostics,
+                    $@"{lootItem.Value.Name} has been passed due to being unlocked and you have ""Pass on all items already unlocked"" enabled. [Pass All Unlocked]");
                 return RollResult.Passed;
             }
 
@@ -259,9 +262,8 @@ internal static class Roller
                     LazyLoot.Config.RestrictionMountsOnlyUntradeables, lootItem) &&
                 lootItem.Value.ItemAction.Value.Action.Value.RowId == 1322)
             {
-                if (LazyLoot.Config.DiagnosticsMode)
-                    DuoLog.Debug(
-                        $@"{lootItem.Value.Name} has been passed due to being unlocked and you have ""Pass on unlocked mounts"" enabled. [Pass Unlocked Mounts]");
+                AddDiagnostic(diagnostics,
+                    $@"{lootItem.Value.Name} has been passed due to being unlocked and you have ""Pass on unlocked mounts"" enabled. [Pass Unlocked Mounts]");
                 return RollResult.Passed;
             }
 
@@ -269,9 +271,8 @@ internal static class Roller
                     LazyLoot.Config.RestrictionMinionsOnlyUntradeables, lootItem) &&
                 lootItem.Value.ItemAction.Value.Action.Value.RowId == 853)
             {
-                if (LazyLoot.Config.DiagnosticsMode)
-                    DuoLog.Debug(
-                        $@"{lootItem.Value.Name} has been passed due to being unlocked and you have ""Pass on unlocked minions"" enabled. [Pass Unlocked Minions]");
+                AddDiagnostic(diagnostics,
+                    $@"{lootItem.Value.Name} has been passed due to being unlocked and you have ""Pass on unlocked minions"" enabled. [Pass Unlocked Minions]");
                 return RollResult.Passed;
             }
 
@@ -279,9 +280,8 @@ internal static class Roller
                     LazyLoot.Config.RestrictionBardingsOnlyUntradeables, lootItem) &&
                 lootItem.Value.ItemAction.Value.Action.Value.RowId == 1013)
             {
-                if (LazyLoot.Config.DiagnosticsMode)
-                    DuoLog.Debug(
-                        $@"{lootItem.Value.Name} has been passed due to being unlocked and you have ""Pass on unlocked bardings"" enabled. [Pass Unlocked Bardings]");
+                AddDiagnostic(diagnostics,
+                    $@"{lootItem.Value.Name} has been passed due to being unlocked and you have ""Pass on unlocked bardings"" enabled. [Pass Unlocked Bardings]");
                 return RollResult.Passed;
             }
 
@@ -289,9 +289,8 @@ internal static class Roller
                     LazyLoot.Config.RestrictionEmoteHairstyleOnlyUntradeables, lootItem) &&
                 lootItem.Value.ItemAction.Value.Action.Value.RowId == 2633)
             {
-                if (LazyLoot.Config.DiagnosticsMode)
-                    DuoLog.Debug(
-                        $@"{lootItem.Value.Name} has been passed due to being unlocked and you have ""Pass on unlocked emotes and hairstyles"" enabled. [Pass Unlocked Emote/Hairstyle]");
+                AddDiagnostic(diagnostics,
+                    $@"{lootItem.Value.Name} has been passed due to being unlocked and you have ""Pass on unlocked emotes and hairstyles"" enabled. [Pass Unlocked Emote/Hairstyle]");
                 return RollResult.Passed;
             }
 
@@ -299,9 +298,8 @@ internal static class Roller
                     LazyLoot.Config.RestrictionTripleTriadCardsOnlyUntradeables, lootItem) &&
                 lootItem.Value.ItemAction.Value.Action.Value.RowId == 3357)
             {
-                if (LazyLoot.Config.DiagnosticsMode)
-                    DuoLog.Debug(
-                        $@"{lootItem.Value.Name} has been passed due to being unlocked and you have ""Pass on unlocked triple triad cards"" enabled. [Pass Unlocked Cards]");
+                AddDiagnostic(diagnostics,
+                    $@"{lootItem.Value.Name} has been passed due to being unlocked and you have ""Pass on unlocked triple triad cards"" enabled. [Pass Unlocked Cards]");
                 return RollResult.Passed;
             }
 
@@ -309,9 +307,8 @@ internal static class Roller
                     LazyLoot.Config.RestrictionOrchestrionRollsOnlyUntradeables, lootItem) &&
                 lootItem.Value.ItemAction.Value.Action.Value.RowId == 25183)
             {
-                if (LazyLoot.Config.DiagnosticsMode)
-                    DuoLog.Debug(
-                        $@"{lootItem.Value.Name} has been passed due to being unlocked and you have ""Pass on unlocked orchestrion rolls"" enabled. [Pass Unlocked Orchestrions]");
+                AddDiagnostic(diagnostics,
+                    $@"{lootItem.Value.Name} has been passed due to being unlocked and you have ""Pass on unlocked orchestrion rolls"" enabled. [Pass Unlocked Orchestrions]");
                 return RollResult.Passed;
             }
         }
@@ -324,24 +321,26 @@ internal static class Roller
 
                 if (gcSealValue < LazyLoot.Config.RestrictionSealsAmnt)
                 {
-                    if (LazyLoot.Config.DiagnosticsMode)
-                        DuoLog.Debug(
-                            $@"{lootItem.Value.Name} has been passed due to not reaching your set seals amount (Set: {LazyLoot.Config.RestrictionSealsAmnt} | Item: {gcSealValue} ) [Pass Seals]");
+                    AddDiagnostic(diagnostics,
+                        $@"{lootItem.Value.Name} has been passed due to not reaching your set seals amount (Set: {LazyLoot.Config.RestrictionSealsAmnt} | Item: {gcSealValue} ) [Pass Seals]");
                     return RollResult.Passed;
                 }
             }
 
         if (lootItem.Value.EquipSlotCategory.RowId != 0)
         {
-            if (LazyLoot.Config.RestrictionLootLowerThanJobIlvl && canNeed)
+            if (LazyLoot.Config.RestrictionLootLowerThanJobIlvl)
                 if (lootItem.Value.LevelItem.RowId <
                     Utils.GetPlayerIlevel() - LazyLoot.Config.RestrictionLootLowerThanJobIlvlTreshold)
                 {
                     var toReturn = LazyLoot.Config.RestrictionLootLowerThanJobIlvlRollState == 0
                         ? RollResult.Greeded
                         : RollResult.Passed;
-                    if (toReturn == RollResult.Passed && LazyLoot.Config.DiagnosticsMode)
-                        DuoLog.Debug(
+                    if (toReturn == RollResult.Greeded)
+                        AddDiagnostic(diagnostics,
+                            $@"{lootItem.Value.Name} has been set to greed due to its iLvl being lower than your your current Job (Your: {Utils.GetPlayerIlevel()} | Item: {lootItem.Value.LevelItem.RowId} ) [Greed Item Level Job]");
+                    else if (toReturn == RollResult.Passed)
+                        AddDiagnostic(diagnostics,
                             $@"{lootItem.Value.Name} has been passed due to its iLvl being lower than your your current Job (Your: {Utils.GetPlayerIlevel()} | Item: {lootItem.Value.LevelItem.RowId} ) [Pass Item Level Job]");
                     return toReturn;
                 }
@@ -349,13 +348,12 @@ internal static class Roller
             if (LazyLoot.Config.RestrictionIgnoreItemLevelBelow
                 && lootItem.Value.LevelItem.RowId < LazyLoot.Config.RestrictionIgnoreItemLevelBelowValue)
             {
-                if (LazyLoot.Config.DiagnosticsMode)
-                    DuoLog.Debug(
-                        $@"{lootItem.Value.Name} has been passed due to not reaching the item level required (Set: {LazyLoot.Config.RestrictionIgnoreItemLevelBelowValue} | Item: {lootItem.Value.LevelItem.RowId} ) [Pass Item Level]");
+                AddDiagnostic(diagnostics,
+                    $@"{lootItem.Value.Name} has been passed due to not reaching the item level required (Set: {LazyLoot.Config.RestrictionIgnoreItemLevelBelowValue} | Item: {lootItem.Value.LevelItem.RowId} ) [Pass Item Level]");
                 return RollResult.Passed;
             }
 
-            if (LazyLoot.Config.RestrictionLootIsJobUpgrade && canNeed)
+            if (LazyLoot.Config.RestrictionLootIsJobUpgrade)
             {
                 // seu bloco de verificar equipped continua igual
                 var lootItemSlot = lootItem.Value.EquipSlotCategory.RowId;
@@ -377,8 +375,11 @@ internal static class Roller
                     var toReturn = LazyLoot.Config.RestrictionLootIsJobUpgradeRollState == 0
                         ? RollResult.Greeded
                         : RollResult.Passed;
-                    if (toReturn == RollResult.Passed && LazyLoot.Config.DiagnosticsMode)
-                        DuoLog.Debug(
+                    if (toReturn == RollResult.Greeded)
+                        AddDiagnostic(diagnostics,
+                            $@"{lootItem.Value.Name} has been set to greed due to its iLvl being lower than your your current equipped item (Item: {lootItem.Value.LevelItem.RowId} | Your: {itemsToVerify.Min()} ) [Greed Item Level Job]");
+                    else if (toReturn == RollResult.Passed)
+                        AddDiagnostic(diagnostics,
                             $@"{lootItem.Value.Name} has been passed due to its iLvl being lower than your your current equipped item (Item: {lootItem.Value.LevelItem.RowId} | Your: {itemsToVerify.Min()} ) [Pass Item Level Job]");
                     return toReturn;
                 }
@@ -386,8 +387,9 @@ internal static class Roller
 
             if (LazyLoot.Config.RestrictionOtherJobItems && !canNeed)
             {
-                DuoLog.Debug(
-                    $@"{lootItem.Value.Name} has been passed due to not being an item to your current job ({Player.Object?.ClassJob.Value.Name}) [Pass Not For Job]");
+                AddDiagnostic(diagnostics,
+                    $@"{lootItem.Value.Name} has been passed due to not being an item to your current job ({Player.Object?.ClassJob.Value.Name}) [Pass Not For Job]",
+                    gated: false);
                 return RollResult.Passed;
             }
         }
@@ -395,8 +397,9 @@ internal static class Roller
         if (LazyLoot.Config.RestrictionOtherJobItems && lootItem.Value.ItemAction.Value.Action.Value.RowId == 29153 &&
             Player.Object?.ClassJob.RowId is not (1 or 19))
         {
-            DuoLog.Debug(
-                $@"{lootItem.Value.Name} has been passed due to not being an item to your current job and is a GLA/PLD weapon set ({Player.Object?.ClassJob.Value.Name}) [Pass Not For Job]");
+            AddDiagnostic(diagnostics,
+                $@"{lootItem.Value.Name} has been passed due to not being an item to your current job and is a GLA/PLD weapon set ({Player.Object?.ClassJob.Value.Name}) [Pass Not For Job]",
+                gated: false);
             return RollResult.Passed;
         }
 
@@ -433,6 +436,34 @@ internal static class Roller
             RollResult.Greeded => RollResult.Greeded,
             _ => RollResult.Passed
         };
+    }
+
+    private static RollResult ResolveFinalRoll(
+        RollResult baseOption,
+        RollResult maxAllowed,
+        RollResult? customRule,
+        RollResult playerRule)
+    {
+        if (customRule.HasValue)
+            return MoreRestrictive(customRule.Value, maxAllowed);
+
+        var desired = ApplyPlayerRule(baseOption, playerRule);
+        return MoreRestrictive(desired, maxAllowed);
+    }
+
+    private static RollResult ApplyPlayerRule(RollResult baseOption, RollResult rule)
+    {
+        return rule == RollResult.UnAwarded ? baseOption : rule;
+    }
+
+    private static RollResult MoreRestrictive(RollResult left, RollResult right)
+    {
+        return (RollResult)Math.Max((int)left, (int)right);
+    }
+
+    private static RollResult MoreAggressive(RollResult left, RollResult right)
+    {
+        return (RollResult)Math.Min((int)left, (int)right);
     }
 
 
@@ -552,30 +583,33 @@ internal static class Roller
         return ilvl;
     }
 
-    internal static LlDecision WhatWouldLlDo(uint itemId)
+    internal static LlDecision WhatWouldLlDo(uint itemId, RollState rollState)
     {
-        var baseIntent = LazyLoot.Config.FulfRoll switch
+        var trace = ExplainDecision(itemId, rollState);
+        return ToDecision(trace.Final);
+    }
+
+    internal static LlDecisionTrace ExplainDecision(uint itemId, RollState rollState)
+    {
+        var trace = new LlDecisionTrace
         {
-            0 => RollResult.Needed,
-            1 => RollResult.Greeded,
-            2 => RollResult.Passed,
-            _ => RollResult.UnAwarded
+            BaseIntent = LazyLoot.Config.FulfRoll switch
+            {
+                0 => RollResult.Needed,
+                1 => RollResult.Greeded,
+                2 => RollResult.Passed,
+                _ => RollResult.UnAwarded
+            }
         };
 
-        var custom = GetCustomRuleByItemId(itemId);
-        var chosen = custom ?? baseIntent;
-        var maxAllowed = GetRestrictResultAssumingUpToNeedNormal(itemId);
-        var userRestrict = GetPlayerRestrictByItemId(itemId, true);
-        var final = MergeWithUnAwarded(chosen, maxAllowed, userRestrict);
+        trace.CustomRule = GetCustomRuleByItemId(itemId);
+        trace.MaxAllowed = GetRestrictResultAssumingUpTo(itemId, rollState);
+        trace.PlayerRule = trace.CustomRule == null
+            ? GetPlayerRestrictByItemId(itemId, rollState == RollState.UpToNeed, trace.Diagnostics)
+            : RollResult.UnAwarded;
+        trace.Final = ResolveFinalRoll(trace.BaseIntent, trace.MaxAllowed, trace.CustomRule, trace.PlayerRule);
 
-        return final switch
-        {
-            RollResult.UnAwarded => LlDecision.DoNothing,
-            RollResult.Passed => LlDecision.Pass,
-            RollResult.Greeded => LlDecision.Greed,
-            RollResult.Needed => LlDecision.Need,
-            _ => LlDecision.Pass
-        };
+        return trace;
     }
 
     private static RollResult? GetCustomRuleByItemId(uint itemId)
@@ -591,25 +625,49 @@ internal static class Roller
 
     private static RollResult GetRestrictResultAssumingUpToNeedNormal(uint itemId)
     {
+        return GetRestrictResultAssumingUpTo(itemId, RollState.UpToNeed);
+    }
+
+    private static RollResult GetRestrictResultAssumingUpTo(uint itemId, RollState rollState)
+    {
         var item = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId);
         if (item == null) return RollResult.Passed;
 
-        var stateMax = RollResult.Needed;
+        var stateMax = rollState switch
+        {
+            RollState.UpToNeed => RollResult.Needed,
+            RollState.UpToGreed => RollResult.Greeded,
+            _ => RollResult.Passed
+        };
         const RollResult ruleMax = RollResult.Needed;
         if (item.Value.IsUnique && IsItemUnlocked(itemId)) stateMax = RollResult.Passed;
 
         return ResultMerge(stateMax, ruleMax);
     }
 
-    private static RollResult MergeWithUnAwarded(params RollResult[] results)
+    private static LlDecision ToDecision(RollResult final)
     {
-        if (results.All(r => r == RollResult.UnAwarded)) return RollResult.UnAwarded;
-
-        var filtered = results.Where(r => r != RollResult.UnAwarded).ToArray();
-        return filtered.Length == 0 ? RollResult.UnAwarded : ResultMerge(filtered);
+        return final switch
+        {
+            RollResult.UnAwarded => LlDecision.DoNothing,
+            RollResult.Passed => LlDecision.Pass,
+            RollResult.Greeded => LlDecision.Greed,
+            RollResult.Needed => LlDecision.Need,
+            _ => LlDecision.Pass
+        };
     }
 
     private unsafe delegate bool RollItemRaw(Loot* lootIntPtr, RollResult option, uint lootItemIndex);
+
+    internal sealed class LlDecisionTrace
+    {
+        public RollResult BaseIntent { get; init; }
+        public RollResult MaxAllowed { get; set; }
+        public RollResult? CustomRule { get; set; }
+        public RollResult PlayerRule { get; set; }
+        public RollResult Final { get; set; }
+        public List<string> Diagnostics { get; } = [];
+    }
 
     internal enum LlDecision
     {

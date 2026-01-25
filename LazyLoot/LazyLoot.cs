@@ -13,7 +13,6 @@ using Dalamud.Plugin.Services;
 using ECommons;
 using ECommons.DalamudServices;
 using ECommons.Logging;
-using ECommons.Reflection;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using Lumina.Excel.Sheets;
 using PunishLib;
@@ -22,9 +21,6 @@ namespace LazyLoot;
 
 public class LazyLoot : IDalamudPlugin, IDisposable
 {
-    
-    [PluginService] public static IUnlockState UnlockState { get; set; } = null!;
-    
     private const uint CastYourLotMessage = 5194;
     private const uint WeeklyLockoutMessage = 4234;
 
@@ -46,7 +42,8 @@ public class LazyLoot : IDalamudPlugin, IDisposable
     public LazyLoot(IDalamudPluginInterface pluginInterface)
     {
         ECommonsMain.Init(pluginInterface, this, Module.All);
-        PunishLibMain.Init(pluginInterface, "LazyLoot", new AboutPlugin { Developer = "Gid, Taurenkey and NightmareXIV", Sponsor = "https://ko-fi.com/gidedin"});
+        PunishLibMain.Init(pluginInterface, "LazyLoot",
+            new AboutPlugin { Developer = "Gid, Taurenkey and NightmareXIV", Sponsor = "https://ko-fi.com/gidedin" });
 
         Config = Svc.PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         if (Config.MigrateIfNeeded())
@@ -83,6 +80,8 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 
         Svc.Framework.Update += OnFrameworkUpdate;
     }
+
+    [PluginService] public static IUnlockState UnlockState { get; set; } = null!;
 
     public string Name => "LazyLoot";
 
@@ -414,14 +413,28 @@ public class LazyLoot : IDalamudPlugin, IDisposable
     {
         if (string.IsNullOrWhiteSpace(idOrNameArg))
         {
-            DuoLog.Debug("Usage: /lazy test item <Item ID or Item Name>");
+            DuoLog.Debug("Usage: /lazy test item <Item ID or Item Name> [need|n|greed|g|pass|p]");
             return;
         }
 
-        var itemSheet = Svc.Data.GetExcelSheet<Item>();
-        if (!uint.TryParse(idOrNameArg, out var itemId))
+        var upTo = RollState.UpToNeed;
+        var itemQuery = idOrNameArg;
+        var args = idOrNameArg.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (args.Length >= 2 && TryParseUpToToken(args[^1], out var parsedUpTo))
         {
-            var search = idOrNameArg.Trim();
+            upTo = parsedUpTo;
+            itemQuery = string.Join(" ", args.Take(args.Length - 1));
+            if (string.IsNullOrWhiteSpace(itemQuery))
+            {
+                DuoLog.Debug("Usage: /lazy test item <Item ID or Item Name> [need|n|greed|g|pass|p]");
+                return;
+            }
+        }
+
+        var itemSheet = Svc.Data.GetExcelSheet<Item>();
+        if (!uint.TryParse(itemQuery, out var itemId))
+        {
+            var search = itemQuery.Trim();
             var matches = itemSheet
                 .Where(x => x.Name.ToString()
                     .Contains(search, StringComparison.OrdinalIgnoreCase))
@@ -473,24 +486,24 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         var tempDiagnosticsMode = Config.DiagnosticsMode;
         Config.DiagnosticsMode = true;
         Config.Save();
-        var decision = Roller.WhatWouldLlDo(itemId);
+        var trace = Roller.ExplainDecision(itemId, upTo);
         Config.DiagnosticsMode = tempDiagnosticsMode;
         Config.Save();
 
-        var decisionText = decision switch
+        var decisionText = trace.Final switch
         {
-            Roller.LlDecision.DoNothing => "DO NOTHING",
-            Roller.LlDecision.Pass => "PASS",
-            Roller.LlDecision.Greed => "GREED",
-            Roller.LlDecision.Need => "NEED",
-            _ => $"UNKNOWN ({decision})"
+            RollResult.UnAwarded => "DO NOTHING",
+            RollResult.Passed => "PASS",
+            RollResult.Greeded => "GREED",
+            RollResult.Needed => "NEED",
+            _ => $"UNKNOWN ({trace.Final})"
         };
-        ushort decisionColor = decision switch
+        ushort decisionColor = trace.Final switch
         {
-            Roller.LlDecision.DoNothing => 8, // Grey
-            Roller.LlDecision.Pass => 14, // Red
-            Roller.LlDecision.Greed => 500, // Yellow
-            Roller.LlDecision.Need => 45, // Green
+            RollResult.UnAwarded => 8, // Grey
+            RollResult.Passed => 14, // Red
+            RollResult.Greeded => 500, // Yellow
+            RollResult.Needed => 45, // Green
             _ => 0
         };
 
@@ -510,5 +523,42 @@ public class LazyLoot : IDalamudPlugin, IDisposable
                 new UIForegroundPayload(0)
             })
         );
+
+        var customText = trace.CustomRule.HasValue ? trace.CustomRule.Value.ToString() : "None";
+        var summary =
+            $"[LazyLoot Item Test] :: Trace :: FULF {trace.BaseIntent} | UpTo {upTo} | Max {trace.MaxAllowed} | Custom {customText} | Player {trace.PlayerRule} | Final {trace.Final}";
+        Svc.Chat.Print(summary);
+
+        if (trace.Diagnostics.Count == 0)
+        {
+            Svc.Chat.Print("[LazyLoot Item Test] :: Reason :: None (FULF/base choice or max constraint only)");
+        }
+        else
+        {
+            foreach (var reason in trace.Diagnostics)
+                Svc.Chat.Print($"[LazyLoot Item Test] :: Reason :: {reason}");
+        }
+    }
+
+    private static bool TryParseUpToToken(string token, out RollState rollState)
+    {
+        switch (token.ToLowerInvariant())
+        {
+            case "need":
+            case "n":
+                rollState = RollState.UpToNeed;
+                return true;
+            case "greed":
+            case "g":
+                rollState = RollState.UpToGreed;
+                return true;
+            case "pass":
+            case "p":
+                rollState = RollState.UpToPass;
+                return true;
+            default:
+                rollState = RollState.UpToNeed;
+                return false;
+        }
     }
 }
