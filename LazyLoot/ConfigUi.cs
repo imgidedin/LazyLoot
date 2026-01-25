@@ -672,7 +672,7 @@ public class ConfigUi : Window, IDisposable
 
             if (!ImGui.BeginPopupContextItem($"{popupIdPrefix}_roll_header_{i}", ImGuiPopupFlags.MouseButtonLeft)
                 && !ImGui.BeginPopupContextItem($"{popupIdPrefix}_roll_header_{i}")) continue;
-            
+
             if (ImGui.MenuItem("Mark All"))
                 markAll(rollRule);
             ImGui.EndPopup();
@@ -947,7 +947,7 @@ public class ConfigUi : Window, IDisposable
                     ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY,
                     new Vector2(0, tableHeight)))
             {
-                ImGui.TableSetupColumn("Enabled", ImGuiTableColumnFlags.WidthFixed, 50f);
+                ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 30f);
                 ImGui.TableSetupColumn("Icon", ImGuiTableColumnFlags.WidthFixed, 32f);
                 ImGui.TableSetupColumn("Name", ImGuiTableColumnFlags.WidthStretch);
                 ImGui.TableSetupColumn("Need", ImGuiTableColumnFlags.WidthFixed, 50f);
@@ -967,7 +967,15 @@ public class ConfigUi : Window, IDisposable
                 {
                     var item = items[i];
                     var restrictedItem = Svc.Data.GetExcelSheet<Item>().GetRow(item.Id);
+                    var isUnlocked = Roller.IsItemUnlocked(restrictedItem.RowId);
                     ImGui.TableNextRow();
+
+                    if (isUnlocked)
+                    {
+                        var bg = ImGui.GetColorU32(new Vector4(90 / 255f, 112 / 255f, 83 / 255f, 0.3f));
+                        ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, bg);
+                    }
+
                     ImGui.TableNextColumn();
                     var enabled = item.Enabled;
                     CenterText();
@@ -982,29 +990,34 @@ public class ConfigUi : Window, IDisposable
 
                     var icon = GetItemIcon(restrictedItem.Icon);
                     if (icon != null)
-                        ImGui.Image(icon.Handle, new Vector2(24, 24));
+                        ImGui.Image(icon.Handle, new Vector2(20, 20));
                     else
-                        ImGui.Text("-");
+                        ImGui.Dummy(new Vector2(20, 20));
                     TrySendItemLinkOnRightClick(restrictedItem);
 
                     ImGui.TableNextColumn();
                     ImGui.Text(restrictedItem.Name.ToString());
                     if (ImGui.IsItemHovered())
-                        ImGui.SetTooltip(restrictedItem.Name.ToString());
-                    TrySendItemLinkOnRightClick(restrictedItem);
-                    if (Roller.IsUnlockableAndUnlocked(restrictedItem))
                     {
-                        ImGui.SameLine(0, 6f);
-                        var obtainedIcon = GetItemIcon(230419);
-                        if (obtainedIcon != null)
+                        ImGui.BeginTooltip();
+                        ImGui.Text(restrictedItem.Name.ToString());
+                        if (isUnlocked)
                         {
-                            var iconSize = new Vector2(16, 16);
-                            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 2f);
-                            ImGui.Image(obtainedIcon.Handle, iconSize);
-                            if (ImGui.IsItemHovered())
-                                ImGui.SetTooltip("Already Unlocked");
+                            var obtainedIcon = GetItemIcon(230419);
+                            if (obtainedIcon != null)
+                            {
+                                var iconSize = new Vector2(16, 16);
+                                ImGui.SameLine();
+                                ImGui.SetCursorPosY(ImGui.GetCursorPosY());
+                                ImGui.Image(obtainedIcon.Handle, iconSize);
+                                ImGui.SameLine();
+                            }
+                            ImGui.TextUnformatted("Already Unlocked");
                         }
+
+                        ImGui.EndTooltip();
                     }
+                    TrySendItemLinkOnRightClick(restrictedItem);
 
                     ImGui.TableNextColumn();
                     CenterText();
@@ -1310,7 +1323,7 @@ public class ConfigUi : Window, IDisposable
                     ImGui.TableNextColumn();
                     CenterText();
 
-                    ImGui.Image(GetDutyIcon(restrictedDuty), new Vector2(24, 24));
+                    ImGui.Image(GetDutyIcon(restrictedDuty), new Vector2(20, 20));
                     if (ImGui.IsItemHovered())
                         ImGui.SetTooltip((restrictedDuty is { HighEndDuty: true, ContentType.Value.RowId: 5 }
                             ? Svc.Data.GetExcelSheet<ContentType>()
