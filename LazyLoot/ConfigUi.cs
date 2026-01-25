@@ -656,6 +656,51 @@ public class ConfigUi : Window, IDisposable
         }
     }
 
+    private static void DrawRollRuleTableHeaders(int columnCount, string popupIdPrefix, Action<RollResult> markAll)
+    {
+        ImGui.TableNextRow(ImGuiTableRowFlags.Headers);
+        for (var i = 0; i < columnCount; i++)
+        {
+            ImGui.TableSetColumnIndex(i);
+            var name = ImGui.TableGetColumnName(i);
+            var colTextWidth = ImGui.CalcTextSize(name).X;
+            var columnWidth = ImGui.GetColumnWidth();
+            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (columnWidth - colTextWidth) * 0.5f);
+            ImGui.TextUnformatted(name);
+
+            if (!TryGetRollRuleForHeader(i, out var rollRule)) continue;
+
+            if (!ImGui.BeginPopupContextItem($"{popupIdPrefix}_roll_header_{i}", ImGuiPopupFlags.MouseButtonLeft)
+                && !ImGui.BeginPopupContextItem($"{popupIdPrefix}_roll_header_{i}")) continue;
+            
+            if (ImGui.MenuItem("Mark All"))
+                markAll(rollRule);
+            ImGui.EndPopup();
+        }
+    }
+
+    private static bool TryGetRollRuleForHeader(int columnIndex, out RollResult rollRule)
+    {
+        switch (columnIndex)
+        {
+            case 3:
+                rollRule = RollResult.Needed;
+                return true;
+            case 4:
+                rollRule = RollResult.Greeded;
+                return true;
+            case 5:
+                rollRule = RollResult.Passed;
+                return true;
+            case 6:
+                rollRule = RollResult.UnAwarded;
+                return true;
+            default:
+                rollRule = default;
+                return false;
+        }
+    }
+
     private static void DrawOnlyUntradeableCheckbox(string id, ref bool parentRestriction, ref bool thisRestriction)
     {
         if (!parentRestriction) return;
@@ -910,7 +955,12 @@ public class ConfigUi : Window, IDisposable
                 ImGui.TableSetupColumn("Pass", ImGuiTableColumnFlags.WidthFixed, 50f);
                 ImGui.TableSetupColumn("Nothing", ImGuiTableColumnFlags.WidthFixed, 50f);
                 ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 70f);
-                DrawCenteredTableHeaders(8);
+                DrawRollRuleTableHeaders(8, "item_restrictions", rollRule =>
+                {
+                    foreach (var item in items)
+                        item.RollRule = rollRule;
+                    LazyLoot.Config.Save();
+                });
 
                 int? removeIndex = null;
                 for (var i = 0; i < items.Count; i++)
@@ -1235,7 +1285,12 @@ public class ConfigUi : Window, IDisposable
                 ImGui.TableSetupColumn("Pass", ImGuiTableColumnFlags.WidthFixed, 50f);
                 ImGui.TableSetupColumn("Nothing", ImGuiTableColumnFlags.WidthFixed, 50f);
                 ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 60f);
-                DrawCenteredTableHeaders(8);
+                DrawRollRuleTableHeaders(8, "duty_restrictions", rollRule =>
+                {
+                    foreach (var duty in duties)
+                        duty.RollRule = rollRule;
+                    LazyLoot.Config.Save();
+                });
 
                 int? removeIndex = null;
                 for (var i = 0; i < duties.Count; i++)
