@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.Text.SeStringHandling;
@@ -955,6 +956,7 @@ public class ConfigUi : Window, IDisposable
                 ImGui.TableSetupColumn("Pass", ImGuiTableColumnFlags.WidthFixed, 50f);
                 ImGui.TableSetupColumn("Nothing", ImGuiTableColumnFlags.WidthFixed, 50f);
                 ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 70f);
+                ImGui.TableSetupScrollFreeze(0, 1);
                 DrawRollRuleTableHeaders(8, "item_restrictions", rollRule =>
                 {
                     foreach (var item in items)
@@ -1195,10 +1197,21 @@ public class ConfigUi : Window, IDisposable
             return;
         }
 
+        string decodedPreset;
+        try
+        {
+            decodedPreset = Encoding.UTF8.GetString(Convert.FromBase64String(clipboardText));
+        }
+        catch (FormatException)
+        {
+            Notify.Error("Failed to import preset - invalid format");
+            return;
+        }
+
         RestrictionPresetExport? imported;
         try
         {
-            imported = JsonSerializer.Deserialize<RestrictionPresetExport>(clipboardText);
+            imported = JsonSerializer.Deserialize<RestrictionPresetExport>(decodedPreset);
         }
         catch (Exception e)
         {
@@ -1298,6 +1311,7 @@ public class ConfigUi : Window, IDisposable
                 ImGui.TableSetupColumn("Pass", ImGuiTableColumnFlags.WidthFixed, 50f);
                 ImGui.TableSetupColumn("Nothing", ImGuiTableColumnFlags.WidthFixed, 50f);
                 ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 60f);
+                ImGui.TableSetupScrollFreeze(0, 1);
                 DrawRollRuleTableHeaders(8, "duty_restrictions", rollRule =>
                 {
                     foreach (var duty in duties)
@@ -1574,7 +1588,8 @@ public class ConfigUi : Window, IDisposable
                 Enabled = activePreset.Enabled,
                 Restrictions = activePreset.Restrictions
             });
-            ImGui.SetClipboardText(json);
+            var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
+            ImGui.SetClipboardText(encoded);
             Notify.Success("Preset copied to clipboard!");
         }
 
