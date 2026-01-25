@@ -12,6 +12,13 @@ internal static class Utils
 {
     private static readonly Dictionary<string, object> States = new();
 
+    public static Vector4 MeleeRed { get; } = new(99 / 255f, 28 / 255f, 28 / 255f, 1f);
+    public static Vector4 HealerGreen { get; } = new(90 / 255f, 112 / 255f, 83 / 255f, 1f);
+    public static Vector4 TankBlue { get; } = new(43 / 255f, 57 / 255f, 150 / 255f, 1f);
+    public static Vector4 PhysRangedYellow { get; } = new(152 / 255f, 120 / 255f, 31 / 255f, 1f);
+    public static Vector4 White { get; } = new(255 / 255f, 255 / 255f, 255 / 255f, 1f);
+    public static Vector4 Black { get; } = new(0 / 255f, 0 / 255f, 0 / 255f, 1f);
+
     public static unsafe int GetPlayerIlevel()
     {
         return UIState.Instance()->CurrentItemLevel;

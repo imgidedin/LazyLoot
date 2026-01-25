@@ -173,7 +173,7 @@ public class ConfigUi : Window, IDisposable
         ImGui.InputInt("Debug Value Tester", ref _debugValue);
         ImGui.Text($"Is Unlocked: {Roller.IsItemUnlocked((uint)_debugValue)}");
     }
-    
+
     private static void DrawDebugItemUnlockable()
     {
         ImGui.TextUnformatted("Is Item Unlockable?");
@@ -443,11 +443,11 @@ public class ConfigUi : Window, IDisposable
 
     private static void DrawDiagnostics()
     {
-        if (ImGui.Checkbox("Diagnostics Mode", ref LazyLoot.Config.DiagnosticsMode))
-            LazyLoot.Config.Save();
-
-        ImGuiComponents.HelpMarker(
-            "Outputs additional messages to chat whenever an item is passed, with reasons. This is useful for helping to diagnose issues with the developers or for understanding why LazyLoot makes decisions to pass on items.\r\n\r\nThese messages will only be displayed to you, nobody else in-game can see them.");
+        ImGui.TextWrapped(
+            "Outputs additional messages to chat whenever an item is passed, with reasons. This is useful for helping to diagnose issues with the developers or for understanding why LazyLoot makes decisions to pass on items.");
+        ImGui.TextWrapped(
+            "These messages will only be displayed to you, nobody else in-game can see them.");
+        ImGui.Dummy(new Vector2(0, 4));
 
         if (ImGui.Checkbox("Don't pass on items that fail to roll.", ref LazyLoot.Config.NoPassEmergency))
             LazyLoot.Config.Save();
@@ -477,15 +477,47 @@ public class ConfigUi : Window, IDisposable
             4f,
             ImDrawFlags.RoundCornersAll);
         ImGui.SetCursorPos(new Vector2(cursor.X + style.FramePadding.X, cursor.Y + style.FramePadding.Y));
-        ImGui.TextColored(new Vector4(0f, 0f, 0f, 1f), title);
+        ImGui.TextColored(Utils.Black, title);
         ImGui.SetCursorPos(cursor with { Y = cursor.Y + size.Y + style.ItemSpacing.Y });
+    }
+
+    private static bool DrawToggleSectionHeader(string title, string checkboxId, ref bool enabled,
+        bool optional = false)
+    {
+        var style = ImGui.GetStyle();
+        var cursor = ImGui.GetCursorPos();
+        var cursorScreen = ImGui.GetCursorScreenPos();
+        var extraPadY = style.FramePadding.Y;
+        var size = new Vector2(ImGui.GetContentRegionAvail().X, ImGui.GetFrameHeight() + extraPadY * 2f);
+        var bgColor = enabled
+            ? Utils.HealerGreen
+            : optional
+                ? ImGuiColors.ParsedGrey
+                : Utils.MeleeRed;
+        var fgColor = enabled ? Utils.Black : Utils.White;
+
+        ImGui.GetWindowDrawList().AddRectFilled(
+            cursorScreen,
+            new Vector2(cursorScreen.X + size.X, cursorScreen.Y + size.Y),
+            ImGui.GetColorU32(bgColor),
+            4f,
+            ImDrawFlags.RoundCornersAll);
+        ImGui.SetCursorPos(new Vector2(cursor.X + style.FramePadding.X, cursor.Y + style.FramePadding.Y));
+        ImGui.PushStyleColor(ImGuiCol.CheckMark, bgColor);
+        var changed = ImGui.Checkbox(checkboxId, ref enabled);
+        ImGui.PopStyleColor();
+        ImGui.SameLine();
+        ImGui.TextColored(optional ? Utils.Black : fgColor, $"{title} - {(enabled ? "Enabled" : "Disabled")}");
+        ImGui.SetCursorPos(cursor with { Y = cursor.Y + size.Y + style.ItemSpacing.Y });
+
+        return changed;
     }
 
     private static void DrawFeatures()
     {
         const float sectionIndent = 16f;
 
-        DrawSectionHeader("FULF Settings");
+        DrawToggleSectionHeader("FULF Settings", "###FulfEnabled", ref LazyLoot.Config.FulfEnabled);
         ImGui.Dummy(new Vector2(0, 4));
 
         ImGui.Indent(sectionIndent);
@@ -509,7 +541,7 @@ public class ConfigUi : Window, IDisposable
         ImGui.Unindent(sectionIndent);
 
         ImGui.Dummy(new Vector2(0, 4));
-        DrawSectionHeader("DTR Bar Settings");
+        DrawToggleSectionHeader("Server Info Bar (DTR)", "###LazyLootDtrEnabled", ref LazyLoot.Config.ShowDtrEntry);
         ImGui.Dummy(new Vector2(0, 4));
 
         ImGui.Indent(sectionIndent);
@@ -517,7 +549,9 @@ public class ConfigUi : Window, IDisposable
         ImGui.Unindent(sectionIndent);
 
         ImGui.Dummy(new Vector2(0, 4));
-        DrawSectionHeader("Diagnostics Settings");
+        if (DrawToggleSectionHeader("Diagnostics Mode", "###DiagnosticsMode", ref LazyLoot.Config.DiagnosticsMode,
+                true))
+            LazyLoot.Config.Save();
         ImGui.Dummy(new Vector2(0, 4));
 
         ImGui.Indent(sectionIndent);
@@ -527,9 +561,14 @@ public class ConfigUi : Window, IDisposable
 
     private static void DrawRollingDelay()
     {
-        ImGui.SetNextItemWidth(100);
+        ImGui.TextWrapped(
+            "Rolling delay is the time (in seconds) between consecutive item rolls. Use it to prevent items from being rolled too frequently and to make the behavior look more natural. The first roll delay is the time (in seconds) from when an item is added to a chest until it is rolled for the first time.");
+        ImGui.Dummy(new Vector2(0, 4));
+        ImGui.Text("Rolling delay");
+        ImGui.Dummy(new Vector2(0, 4));
 
-        if (ImGui.DragFloatRange2("Rolling delay between items", ref LazyLoot.Config.MinRollDelayInSeconds,
+        ImGui.SetNextItemWidth(100);
+        if (ImGui.DragFloatRange2("Rolling delay", ref LazyLoot.Config.MinRollDelayInSeconds,
                 ref LazyLoot.Config.MaxRollDelayInSeconds, 0.1f))
         {
             LazyLoot.Config.MinRollDelayInSeconds = Math.Max(LazyLoot.Config.MinRollDelayInSeconds, 0.5f);
@@ -537,6 +576,24 @@ public class ConfigUi : Window, IDisposable
             LazyLoot.Config.MaxRollDelayInSeconds = Math.Max(LazyLoot.Config.MaxRollDelayInSeconds,
                 LazyLoot.Config.MinRollDelayInSeconds + 0.1f);
         }
+
+        ImGui.Dummy(new Vector2(0, 4));
+        ImGui.Text("First roll delay range");
+        ImGui.Dummy(new Vector2(0, 4));
+
+        ImGui.SetNextItemWidth(100);
+        ImGui.DragFloat("Minimum delay. ", ref LazyLoot.Config.FulfMinRollDelayInSeconds, 0.1F);
+
+        if (LazyLoot.Config.FulfMinRollDelayInSeconds >= LazyLoot.Config.FulfMaxRollDelayInSeconds)
+            LazyLoot.Config.FulfMinRollDelayInSeconds = LazyLoot.Config.FulfMaxRollDelayInSeconds - 0.1f;
+
+        if (LazyLoot.Config.FulfMinRollDelayInSeconds < 1.5f) LazyLoot.Config.FulfMinRollDelayInSeconds = 1.5f;
+
+        ImGui.SetNextItemWidth(100);
+        ImGui.DragFloat("Maximum delay. ", ref LazyLoot.Config.FulfMaxRollDelayInSeconds, 0.1F);
+
+        if (LazyLoot.Config.FulfMaxRollDelayInSeconds <= LazyLoot.Config.FulfMinRollDelayInSeconds)
+            LazyLoot.Config.FulfMaxRollDelayInSeconds = LazyLoot.Config.FulfMinRollDelayInSeconds + 0.1f;
     }
 
     private static void DrawCommands()
@@ -902,7 +959,7 @@ public class ConfigUi : Window, IDisposable
                     ImGui.TableNextColumn();
                     CenterText();
                     if (ColoredRadioButton($"##need{item.Id}", item.RollRule == RollResult.Needed,
-                            ImGuiColors.HealerGreen))
+                            Utils.HealerGreen))
                     {
                         item.RollRule = RollResult.Needed;
                         LazyLoot.Config.Save();
@@ -911,7 +968,7 @@ public class ConfigUi : Window, IDisposable
                     ImGui.TableNextColumn();
                     CenterText();
                     if (ColoredRadioButton($"##greed{item.Id}", item.RollRule == RollResult.Greeded,
-                            ImGuiColors.DalamudYellow))
+                            Utils.PhysRangedYellow))
                     {
                         item.RollRule = RollResult.Greeded;
                         LazyLoot.Config.Save();
@@ -920,7 +977,7 @@ public class ConfigUi : Window, IDisposable
                     ImGui.TableNextColumn();
                     CenterText();
                     if (ColoredRadioButton($"##pass{item.Id}", item.RollRule == RollResult.Passed,
-                            ImGuiColors.DalamudRed))
+                            Utils.MeleeRed))
                     {
                         item.RollRule = RollResult.Passed;
                         LazyLoot.Config.Save();
@@ -929,7 +986,7 @@ public class ConfigUi : Window, IDisposable
                     ImGui.TableNextColumn();
                     CenterText();
                     if (ColoredRadioButton($"##doNothing{item.Id}", item.RollRule == RollResult.UnAwarded,
-                            new Vector4(1f, 1f, 1f, 1f)))
+                            ImGuiColors.ParsedGrey))
                     {
                         item.RollRule = RollResult.UnAwarded;
                         LazyLoot.Config.Save();
@@ -1213,7 +1270,7 @@ public class ConfigUi : Window, IDisposable
                     ImGui.TableNextColumn();
                     CenterText();
                     if (ColoredRadioButton($"##need{duty.Id}", duty.RollRule == RollResult.Needed,
-                            ImGuiColors.HealerGreen))
+                            Utils.HealerGreen))
                     {
                         duty.RollRule = RollResult.Needed;
                         LazyLoot.Config.Save();
@@ -1222,7 +1279,7 @@ public class ConfigUi : Window, IDisposable
                     ImGui.TableNextColumn();
                     CenterText();
                     if (ColoredRadioButton($"##greed{duty.Id}", duty.RollRule == RollResult.Greeded,
-                            ImGuiColors.DalamudYellow))
+                            Utils.PhysRangedYellow))
                     {
                         duty.RollRule = RollResult.Greeded;
                         LazyLoot.Config.Save();
@@ -1231,7 +1288,7 @@ public class ConfigUi : Window, IDisposable
                     ImGui.TableNextColumn();
                     CenterText();
                     if (ColoredRadioButton($"##pass{duty.Id}", duty.RollRule == RollResult.Passed,
-                            ImGuiColors.DalamudRed))
+                            Utils.MeleeRed))
                     {
                         duty.RollRule = RollResult.Passed;
                         LazyLoot.Config.Save();
@@ -1240,7 +1297,7 @@ public class ConfigUi : Window, IDisposable
                     ImGui.TableNextColumn();
                     CenterText();
                     if (ColoredRadioButton($"##doNothing{duty.Id}", duty.RollRule == RollResult.UnAwarded,
-                            new Vector4(1f, 1f, 1f, 1f)))
+                            ImGuiColors.ParsedGrey))
                     {
                         duty.RollRule = RollResult.UnAwarded;
                         LazyLoot.Config.Save();
@@ -1489,16 +1546,7 @@ public class ConfigUi : Window, IDisposable
 
     private static void DrawDtrToggle()
     {
-        ImGui.Text("Server Info Bar (DTR)");
-        ImGui.Checkbox("###LazyLootDtrEnabled", ref LazyLoot.Config.ShowDtrEntry);
-        ImGui.SameLine();
-        ImGui.TextColored(
-            LazyLoot.Config.ShowDtrEntry ? ImGuiColors.HealerGreen : ImGuiColors.DalamudRed,
-            LazyLoot.Config.ShowDtrEntry ? "DTR Enabled" : "DTR Disabled"
-        );
         ImGui.TextWrapped("Show/hide LazyLoot in the Dalamud Server Info Bar (DTR).");
-        ImGui.Separator();
-        ImGui.Dummy(new Vector2(0, 4));
         ImGui.TextWrapped(
             "Depending on your settings, sometimes the DTR entry text will show some extra information, like:");
         ImGui.BulletText("WLD: Weekly Lockout Duty");
@@ -1517,11 +1565,7 @@ public class ConfigUi : Window, IDisposable
     {
         ImGui.TextWrapped(
             "Fancy Ultimate Lazy Feature (FULF) is a set and forget feature that will automatically roll on items for you instead of having to use the commands above.");
-        ImGui.Separator();
-        ImGui.Checkbox("###FulfEnabled", ref LazyLoot.Config.FulfEnabled);
-        ImGui.SameLine();
-        ImGui.TextColored(LazyLoot.Config.FulfEnabled ? ImGuiColors.HealerGreen : ImGuiColors.DalamudRed,
-            LazyLoot.Config.FulfEnabled ? "FULF Enabled" : "FULF Disabled");
+        ImGui.Dummy(new Vector2(0, 4));
         if (LazyLoot.Config.RestrictionWeeklyLockoutItems && LazyLoot.Config.WeeklyLockoutDutyActive)
             ImGui.TextColored(ImGuiColors.DalamudYellow,
                 "Weekly Lockout Duty detected: FULF and /lazy rolls are temporarily disabled until you leave this duty or disable the weekly lockout setting.");
@@ -1530,21 +1574,6 @@ public class ConfigUi : Window, IDisposable
 
         if (ImGui.Combo("Roll options", ref LazyLoot.Config.FulfRoll, new[] { "Need", "Greed", "Pass" }, 3))
             LazyLoot.Config.Save();
-
-        ImGui.Text("First Roll Delay Range (In seconds)");
-        ImGui.SetNextItemWidth(100);
-        ImGui.DragFloat("Minimum Delay in seconds. ", ref LazyLoot.Config.FulfMinRollDelayInSeconds, 0.1F);
-
-        if (LazyLoot.Config.FulfMinRollDelayInSeconds >= LazyLoot.Config.FulfMaxRollDelayInSeconds)
-            LazyLoot.Config.FulfMinRollDelayInSeconds = LazyLoot.Config.FulfMaxRollDelayInSeconds - 0.1f;
-
-        if (LazyLoot.Config.FulfMinRollDelayInSeconds < 1.5f) LazyLoot.Config.FulfMinRollDelayInSeconds = 1.5f;
-
-        ImGui.SetNextItemWidth(100);
-        ImGui.DragFloat("Maximum Delay in seconds. ", ref LazyLoot.Config.FulfMaxRollDelayInSeconds, 0.1F);
-
-        if (LazyLoot.Config.FulfMaxRollDelayInSeconds <= LazyLoot.Config.FulfMinRollDelayInSeconds)
-            LazyLoot.Config.FulfMaxRollDelayInSeconds = LazyLoot.Config.FulfMinRollDelayInSeconds + 0.1f;
     }
 
     private enum DebugPanel
