@@ -7,6 +7,7 @@ using Dalamud.Game.Gui.Dtr;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
+using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using ECommons;
@@ -20,6 +21,9 @@ namespace LazyLoot;
 
 public class LazyLoot : IDalamudPlugin, IDisposable
 {
+    
+    [PluginService] public static IUnlockState UnlockState { get; set; } = null!;
+    
     private const uint CastYourLotMessage = 5194;
     private const uint WeeklyLockoutMessage = 4234;
 

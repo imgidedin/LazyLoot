@@ -161,20 +161,7 @@ internal static class Roller
 
     private static bool IsUnlockableItem(Item item, IReadOnlyCollection<uint> orchId)
     {
-        if (orchId.Count > 0)
-            return true;
-
-        return item.ItemAction.Value.Action.Value.RowId
-                is 853 // Unlocks a companion (minion) 
-                or 1013 // Unlocks a chocobo companion barding
-                or 1322 // Unlocks a mount
-                or 2633 // Unlocks various types of content (Riding Maps, Blue Mage Totems, Emotes, Hairstyles ...)
-                or 3357 // Unlocks a Triple Triad Card
-                or 20086 // Unlocks an Ornament (fashion accessory)
-                or 25183 // Unlocks an Orchestrion Roll
-                or 29459 // Unlocks portrait designs
-                or 37312 // Unlocks glasses and faces we wear type of items
-            ;
+        return orchId.Count > 0 || LazyLoot.UnlockState.IsItemUnlockable(item);
     }
 
     private static bool IsUnlockableUnlocked(uint itemId, IReadOnlyCollection<uint> orchId)
