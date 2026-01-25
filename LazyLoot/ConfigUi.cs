@@ -41,7 +41,11 @@ public class ConfigUi : Window, IDisposable
     private readonly WindowSystem _windowSystem = new();
     private DebugPanel _activeDebugPanel = DebugPanel.ItemUnlock;
     private ContentFinderCondition? _debugSelectedDuty;
-    private string _lazyTestInput = string.Empty;
+    private Item? _lazyTestSelectedItem;
+    private ContentFinderCondition? _lazyTestSelectedDuty;
+    private int _lazyTestUpToIndex;
+    private readonly List<LazyLoot.LazyTestResult> _lazyTestRuns = [];
+    private static readonly string[] LazyTestUpToLabels = { "Need", "Greed", "Pass" };
 
     public ConfigUi() : base("Lazy Loot Config")
     {
@@ -99,11 +103,12 @@ public class ConfigUi : Window, IDisposable
         ImGui.EndTabBar();
     }
 
-    private static IDalamudTextureWrap? GetItemIcon(uint id)
+    private static IDalamudTextureWrap? GetItemIcon(uint id, bool hiRes = true)
     {
         return Svc.Texture.GetFromGameIcon(new GameIconLookup
         {
-            IconId = id
+            IconId = id,
+            HiRes = hiRes
         }).GetWrapOrDefault();
     }
 
@@ -202,14 +207,202 @@ public class ConfigUi : Window, IDisposable
         ImGui.TextUnformatted("Lazy Test Item");
         ImGui.Separator();
 
-        ImGui.SetNextItemWidth(260f);
-        var runTest = ImGui.InputText("Item ID or name", ref _lazyTestInput, 128,
-            ImGuiInputTextFlags.EnterReturnsTrue);
-        ImGui.SameLine();
-        if (ImGui.Button("Run Test") || runTest)
-            LazyLoot.TestWhatWouldLlDo(_lazyTestInput);
+        DrawLazyTestSelectors();
+        ImGui.Dummy(new Vector2(0, 6));
 
-        ImGui.TextWrapped("Outputs the same result as /lazy test item to chat.");
+        var hasItem = _lazyTestSelectedItem.HasValue;
+        ImGui.BeginDisabled(!hasItem);
+        if (ImGui.Button("Run Test"))
+        {
+            var upTo = GetLazyTestUpTo(_lazyTestUpToIndex);
+            var result = LazyLoot.RunLazyTest(_lazyTestSelectedItem!.Value, _lazyTestSelectedDuty, upTo);
+            RecordLazyTestRun(result);
+        }
+        ImGui.EndDisabled();
+        if (!hasItem && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip("Select an item to run the test.");
+
+        ImGui.SameLine();
+        if (ImGui.Button("Clear History"))
+            _lazyTestRuns.Clear();
+
+        ImGui.Dummy(new Vector2(0, 6));
+        DrawLazyTestHistoryTable();
+
+        ImGui.TextWrapped("Outputs the same result as /lazytest to chat.");
+    }
+
+    private void DrawLazyTestSelectors()
+    {
+        var itemLabel = _lazyTestSelectedItem.HasValue
+            ? $"{_lazyTestSelectedItem.Value.Name} (ID: {_lazyTestSelectedItem.Value.RowId})"
+            : "None";
+        var itemSheet = Svc.Data.GetExcelSheet<Item>();
+        Utils.PopupListButton(
+            $"Select Item (Selected: {itemLabel})",
+            "lazy_test_item_search",
+            "Search for item:",
+            q =>
+            {
+                if (uint.TryParse(q, out var searchId))
+                    return itemSheet
+                        .Where(x => x.RowId == searchId
+                                    && x is { RowId: > 0, Name.IsEmpty: false });
+
+                return itemSheet
+                    .Where(x =>
+                        x.Name.ToString().Contains(q, StringComparison.OrdinalIgnoreCase)
+                        && x is { RowId: > 0, Name.IsEmpty: false });
+            },
+            item => $" {item.Name} (ID: {item.RowId})",
+            renderItem: item =>
+            {
+                var icon = GetItemIcon(item.Icon);
+                if (icon != null)
+                {
+                    ImGui.Image(icon.Handle, new Vector2(16, 16));
+                    ImGui.SameLine();
+                }
+
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip(item.Name.ToString());
+                ImGui.SameLine();
+            },
+            onSelect: item => { _lazyTestSelectedItem = item; }
+        );
+
+        ImGui.SameLine();
+        ImGui.BeginDisabled(!_lazyTestSelectedItem.HasValue);
+        if (ImGui.Button("Clear Item"))
+            _lazyTestSelectedItem = null;
+        ImGui.EndDisabled();
+
+        var dutyLabel = _lazyTestSelectedDuty.HasValue
+            ? $"{_lazyTestSelectedDuty.Value.Name} (ID: {_lazyTestSelectedDuty.Value.RowId})"
+            : "None";
+        var dutySheet = Svc.Data.GetExcelSheet<ContentFinderCondition>();
+        Utils.PopupListButton(
+            $"Select Duty (Selected: {dutyLabel})",
+            "lazy_test_duty_search",
+            "Search for duty:",
+            q =>
+            {
+                if (uint.TryParse(q, out var searchId))
+                    return dutySheet
+                        .Where(x => x.RowId == searchId
+                                    && x is { RowId: > 0, Name.IsEmpty: false });
+
+                return dutySheet
+                    .Where(x =>
+                        x.Name.ToString().Contains(q, StringComparison.OrdinalIgnoreCase)
+                        && x is { RowId: > 0, Name.IsEmpty: false });
+            },
+            duty => $" {duty.Name} (ID: {duty.RowId})",
+            renderItem: duty =>
+            {
+                ImGui.Image(GetDutyIcon(duty), new Vector2(16, 16));
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip(duty.Name.ToString());
+                ImGui.SameLine();
+            },
+            onSelect: duty => { _lazyTestSelectedDuty = duty; }
+        );
+
+        ImGui.SameLine();
+        ImGui.BeginDisabled(!_lazyTestSelectedDuty.HasValue);
+        if (ImGui.Button("Clear Duty"))
+            _lazyTestSelectedDuty = null;
+        ImGui.EndDisabled();
+
+        ImGui.SetNextItemWidth(120f);
+        ImGui.Combo("UpTo", ref _lazyTestUpToIndex, LazyTestUpToLabels, LazyTestUpToLabels.Length);
+    }
+
+    private void RecordLazyTestRun(LazyLoot.LazyTestResult result)
+    {
+        _lazyTestRuns.Insert(0, result);
+        if (_lazyTestRuns.Count > 10)
+            _lazyTestRuns.RemoveAt(_lazyTestRuns.Count - 1);
+    }
+
+    private void DrawLazyTestHistoryTable()
+    {
+        if (_lazyTestRuns.Count == 0)
+        {
+            ImGui.TextUnformatted("No lazy test runs yet.");
+            return;
+        }
+
+        const ImGuiTableFlags flags = ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg |
+                                      ImGuiTableFlags.ScrollY | ImGuiTableFlags.SizingFixedFit;
+        var size = new Vector2(0, 200f);
+        if (!ImGui.BeginTable("##lazy_test_history", 5, flags, size))
+            return;
+
+        ImGui.TableSetupColumn("Time", ImGuiTableColumnFlags.WidthFixed, 70);
+        ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("Duty", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("UpTo", ImGuiTableColumnFlags.WidthFixed, 60);
+        ImGui.TableSetupColumn("Final", ImGuiTableColumnFlags.WidthFixed, 70);
+        ImGui.TableHeadersRow();
+
+        foreach (var run in _lazyTestRuns)
+        {
+            ImGui.TableNextRow();
+
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted(run.Timestamp.ToString("HH:mm:ss"));
+
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted($"{run.ItemName} ({run.ItemId})");
+
+            ImGui.TableNextColumn();
+            var dutyLabel = run.DutyId.HasValue
+                ? $"{run.DutyName} ({run.DutyId.Value})"
+                : "None";
+            ImGui.TextUnformatted(dutyLabel);
+
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted(FormatLazyTestUpTo(run.UpTo));
+
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted(FormatLazyTestResult(run.FinalResult));
+        }
+
+        ImGui.EndTable();
+    }
+
+    private static RollState GetLazyTestUpTo(int index)
+    {
+        return index switch
+        {
+            1 => RollState.UpToGreed,
+            2 => RollState.UpToPass,
+            _ => RollState.UpToNeed
+        };
+    }
+
+    private static string FormatLazyTestUpTo(RollState upTo)
+    {
+        return upTo switch
+        {
+            RollState.UpToNeed => "Need",
+            RollState.UpToGreed => "Greed",
+            RollState.UpToPass => "Pass",
+            _ => upTo.ToString()
+        };
+    }
+
+    private static string FormatLazyTestResult(RollResult result)
+    {
+        return result switch
+        {
+            RollResult.UnAwarded => "DO NOTHING",
+            RollResult.Passed => "PASS",
+            RollResult.Greeded => "GREED",
+            RollResult.Needed => "NEED",
+            _ => result.ToString()
+        };
     }
 
     private static void DrawDebugFadedCopies()
@@ -744,8 +937,8 @@ public class ConfigUi : Window, IDisposable
             DrawCommandRow("/lazy need", "Roll need for all eligible items (greed/pass fallback).");
             DrawCommandRow("/lazy greed", "Roll greed for all eligible items (pass fallback).");
             DrawCommandRow("/lazy pass", "Pass on items you have not rolled for yet.");
-            DrawCommandRow("/lazy test item <item id or name>",
-                "Preview what LazyLoot would do for an item in a perfect scenario (up to need and no duty restriction).");
+            DrawCommandRow("/lazytest item:[9999|\"item name\"] duty:[9999|\"duty name\"] upto:[need|greed|pass]",
+                "Preview what LazyLoot would do for an item with an optional duty and UpTo (defaults to need).");
             DrawCommandRow("/fulf on", "Enable FULF.");
             DrawCommandRow("/fulf off", "Disable FULF.");
             DrawCommandRow("/fulf", "Toggle FULF on or off.");
@@ -1123,7 +1316,15 @@ public class ConfigUi : Window, IDisposable
 
                     var icon = GetItemIcon(restrictedItem.Icon);
                     if (icon != null)
+                    {
                         ImGui.Image(icon.Handle, new Vector2(20, 20));
+                        if (ImGui.IsItemHovered())
+                        {
+                            ImGui.BeginTooltip();
+                            ImGui.Image(icon.Handle, new Vector2(48, 48));
+                            ImGui.EndTooltip();
+                        }
+                    }
                     else
                         ImGui.Dummy(new Vector2(20, 20));
                     TrySendItemLinkOnRightClick(restrictedItem);
@@ -1207,7 +1408,7 @@ public class ConfigUi : Window, IDisposable
 
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(2, 0));
 
-        var itemSheet = Svc.Data.GetExcelSheet<Item>();
+        var itemSheet = Svc.Data.GetExcelSheet<Item>().OrderBy(x => -x.RowId);
         Utils.PopupListButton(
             "Add item...",
             "item_search_add",
@@ -1226,7 +1427,7 @@ public class ConfigUi : Window, IDisposable
                         && x is { RowId: > 0, Name.IsEmpty: false }
                         && items.All(d => d.Id != x.RowId));
             },
-            item => $" {item.Name} (ID: {item.RowId})",
+            getItemLabel: item => $" {item.Name} (ID: {item.RowId}) {(LazyLoot.UnlockState.IsItemUnlockable(item) ? Roller.IsItemUnlocked(item.RowId) ? " \u2713" : "" : "")}",
             renderItem: item =>
             {
                 var icon = GetItemIcon(item.Icon);
@@ -1235,10 +1436,12 @@ public class ConfigUi : Window, IDisposable
                     ImGui.Image(icon.Handle, new Vector2(16, 16));
                     ImGui.SameLine();
                 }
-
                 if (ImGui.IsItemHovered())
-                    ImGui.SetTooltip(item.Name.ToString());
-                ImGui.SameLine();
+                {
+                    ImGui.BeginTooltip();
+                    ImGui.Image(icon.Handle, new Vector2(48, 48));
+                    ImGui.EndTooltip();
+                }
             },
             onSelect: duty =>
             {
@@ -1491,17 +1694,23 @@ public class ConfigUi : Window, IDisposable
                     ImGui.TableNextColumn();
                     CenterText();
 
-                    ImGui.Image(GetDutyIcon(restrictedDuty), new Vector2(20, 20));
+                    var icon = GetDutyIcon(restrictedDuty);
+                    ImGui.Image(icon.Handle, new Vector2(20, 20));
                     if (ImGui.IsItemHovered())
-                        ImGui.SetTooltip((restrictedDuty is { HighEndDuty: true, ContentType.Value.RowId: 5 }
-                            ? Svc.Data.GetExcelSheet<ContentType>()
-                                .FirstOrDefault(x => x.RowId == 28).Name
-                            : restrictedDuty.ContentType.Value.Name).ToString());
+                    {
+                        ImGui.BeginTooltip();
+                        ImGui.Image(icon.Handle, new Vector2(48, 48));
+                        ImGui.EndTooltip();
+                    }
 
                     ImGui.TableNextColumn();
                     ImGui.Text(restrictedDuty.Name.ToString());
                     if (ImGui.IsItemHovered())
-                        ImGui.SetTooltip(restrictedDuty.Name.ToString());
+                        if (ImGui.IsItemHovered())
+                            ImGui.SetTooltip((restrictedDuty is { HighEndDuty: true, ContentType.Value.RowId: 5 }
+                                ? Svc.Data.GetExcelSheet<ContentType>()
+                                    .FirstOrDefault(x => x.RowId == 28).Name
+                                : restrictedDuty.ContentType.Value.Name).ToString());
 
                     ImGui.TableNextColumn();
                     CenterText();
@@ -1555,7 +1764,7 @@ public class ConfigUi : Window, IDisposable
         }
 
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(2, 0));
-        var dutySheet = Svc.Data.GetExcelSheet<ContentFinderCondition>();
+        var dutySheet = Svc.Data.GetExcelSheet<ContentFinderCondition>().OrderBy(x => -x.RowId);
         Utils.PopupListButton(
             "Add duty...",
             "duty_search_add",

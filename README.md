@@ -27,7 +27,7 @@ https://love.puni.sh/ment.json
 | `/lazy need` | Roll need for everything. If you can’t need, it will greed, and if you can’t greed, it will pass. |
 | `/lazy greed` | Roll greed for everything. If you can’t greed, it will pass. |
 | `/lazy pass` | Pass on everything you haven’t rolled on yet. |
-| `/lazy test <itemId>` | Prints what LazyLoot *would* do for a specific item ID, based on your current settings. |
+| `/lazytest item:[9999|"item name"] duty:[9999|"duty name"] upto:[need|greed|pass]` | Prints what LazyLoot *would* do for a specific item and optional duty, based on your current settings. |
 
 ### FULF (Fancy Ultimate Lazy Feature)
 
@@ -113,4 +113,4 @@ LazyLoot shows a DTR entry with your current FULF mode. You can toggle the entry
 
 ---
 
-If you’re unsure how a specific item will be handled, use `/lazy test <Item ID or Item Name>` and check the result in chat.
+If you’re unsure how a specific item will be handled, use `/lazytest item:[9999|"item name"] duty:[9999|"duty name"] upto:[need|greed|pass]` and check the result in chat.

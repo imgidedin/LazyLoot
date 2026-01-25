@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Command;
 using Dalamud.Game.Gui.Dtr;
@@ -23,6 +24,8 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 {
     private const uint CastYourLotMessage = 5194;
     private const uint WeeklyLockoutMessage = 4234;
+    private const string LazyTestUsage =
+        "Usage: /lazytest item:[9999|\"item name\"] duty:[9999|\"duty name\"] upto:[need|greed|pass]";
 
     private static readonly RollResult[] RollArray =
     [
@@ -68,6 +71,12 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         Svc.Commands.AddHandler("/lazy", new CommandInfo(LazyCommand)
         {
             HelpMessage = "Open Lazy Loot config by default. Add need | greed | pass to roll on current items.",
+            ShowInHelp = true
+        });
+
+        Svc.Commands.AddHandler("/lazytest", new CommandInfo(LazyTestCommand)
+        {
+            HelpMessage = "Preview what LazyLoot would do for a specific item and duty.",
             ShowInHelp = true
         });
 
@@ -122,17 +131,9 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 
         switch (args[0].ToLowerInvariant())
         {
-            case "test" when args.Length >= 2:
-            {
-                switch (args[1].ToLowerInvariant())
-                {
-                    case "item":
-                        TestWhatWouldLlDo(string.Join(" ", args.Skip(2)));
-                        return;
-                }
-
-                break;
-            }
+            case "test":
+                LazyTestCommand("/lazytest", string.Join(" ", args.Skip(1)));
+                return;
             default:
                 RollingCommand(arguments);
                 return;
@@ -193,6 +194,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 
         Svc.Commands.RemoveHandler("/lazyloot");
         Svc.Commands.RemoveHandler("/lazy");
+        Svc.Commands.RemoveHandler("/lazytest");
         Svc.Commands.RemoveHandler("/fulf");
 
         ECommonsMain.Dispose();
@@ -261,11 +263,11 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         if (isWeeklyLockedDutyActive) dtrText += " (Disabled | WLD)";
 
         _dtrEntry.Text = new SeString(
-            new IconPayload(BitmapFontIcon.Dice),
+            new IconPayload(isWeeklyLockedDutyActive ? BitmapFontIcon.NoCircle : BitmapFontIcon.Dice),
             new TextPayload(dtrText));
 
         _dtrEntry.Shown = Config.ShowDtrEntry;
-
+        
         if (isWeeklyLockedDutyActive) return;
 
         RollLoot();
@@ -409,86 +411,31 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         return contentFinder is { HighEndDuty: true };
     }
 
-    internal static void TestWhatWouldLlDo(string idOrNameArg)
+    private static void LazyTestCommand(string command, string arguments)
     {
-        if (string.IsNullOrWhiteSpace(idOrNameArg))
+        if (!TryParseLazyTestArgs(arguments, out var request, out var error))
         {
-            DuoLog.Debug("Usage: /lazy test item <Item ID or Item Name> [need|n|greed|g|pass|p]");
+            DuoLog.Debug(error);
             return;
         }
 
-        var upTo = RollState.UpToNeed;
-        var itemQuery = idOrNameArg;
-        var args = idOrNameArg.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (args.Length >= 2 && TryParseUpToToken(args[^1], out var parsedUpTo))
+        if (!TryResolveItem(request.ItemQuery, out var item))
+            return;
+
+        ContentFinderCondition? duty = null;
+        if (!string.IsNullOrWhiteSpace(request.DutyQuery))
         {
-            upTo = parsedUpTo;
-            itemQuery = string.Join(" ", args.Take(args.Length - 1));
-            if (string.IsNullOrWhiteSpace(itemQuery))
-            {
-                DuoLog.Debug("Usage: /lazy test item <Item ID or Item Name> [need|n|greed|g|pass|p]");
+            duty = ResolveDuty(request.DutyQuery);
+            if (duty == null)
                 return;
-            }
         }
 
-        var itemSheet = Svc.Data.GetExcelSheet<Item>();
-        if (!uint.TryParse(itemQuery, out var itemId))
-        {
-            var search = itemQuery.Trim();
-            var matches = itemSheet
-                .Where(x => x.Name.ToString()
-                    .Contains(search, StringComparison.OrdinalIgnoreCase))
-                .ToList();
+        RunLazyTest(item, duty, request.UpTo);
+    }
 
-            switch (matches.Count)
-            {
-                case 0:
-                    DuoLog.Debug($"No item found matching your search '{search}'.");
-                    return;
-                case > 1:
-                {
-                    Svc.Chat.Print(new SeString(new List<Payload>
-                    {
-                        new TextPayload(
-                            $"Found {matches.Count} entries for search '{search}'. Showing the first 5:")
-                    }));
-
-                    foreach (var match in matches.Take(5))
-                        Svc.Chat.Print(new SeString(new List<Payload>
-                            {
-                                new TextPayload($"[LazyLoot Item Test] :: ID {match.RowId} :: "),
-                                new UIForegroundPayload((ushort)(0x223 + match.Rarity * 2)),
-                                new UIGlowPayload((ushort)(0x224 + match.Rarity * 2)),
-                                new ItemPayload(match.RowId, false),
-                                new TextPayload(match.Name.ExtractText()),
-                                RawPayload.LinkTerminator,
-                                new UIForegroundPayload(0),
-                                new UIGlowPayload(0)
-                            })
-                        );
-
-                    return;
-                }
-                default:
-                    itemId = matches[0].RowId;
-                    break;
-            }
-        }
-
-        if (itemId == 0)
-        {
-            DuoLog.Error($"Invalid item id or name: '{idOrNameArg}'.");
-            return;
-        }
-
-        var item = itemSheet.GetRow(itemId);
-
-        var tempDiagnosticsMode = Config.DiagnosticsMode;
-        Config.DiagnosticsMode = true;
-        Config.Save();
-        var trace = Roller.ExplainDecision(itemId, upTo);
-        Config.DiagnosticsMode = tempDiagnosticsMode;
-        Config.Save();
+    internal static LazyTestResult RunLazyTest(Item item, ContentFinderCondition? duty, RollState upTo)
+    {
+        var trace = Roller.ExplainDecision(item.RowId, upTo, duty?.RowId);
 
         var decisionText = trace.Final switch
         {
@@ -509,7 +456,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 
         Svc.Chat.Print(new SeString(new List<Payload>
             {
-                new TextPayload($"[LazyLoot Item Test] :: ID {itemId} :: "),
+                new TextPayload($"[LazyLoot Item Test] :: ID {item.RowId} :: "),
                 new UIForegroundPayload((ushort)(0x223 + item.Rarity * 2)),
                 new UIGlowPayload((ushort)(0x224 + item.Rarity * 2)),
                 new ItemPayload(item.RowId, true),
@@ -525,8 +472,9 @@ public class LazyLoot : IDalamudPlugin, IDisposable
         );
 
         var customText = trace.CustomRule.HasValue ? trace.CustomRule.Value.ToString() : "None";
+        var dutyText = duty != null ? $" | Duty {duty.Value.Name.ToString()} ({duty.Value.RowId})" : string.Empty;
         var summary =
-            $"[LazyLoot Item Test] :: Trace :: FULF {trace.BaseIntent} | UpTo {upTo} | Max {trace.MaxAllowed} | Custom {customText} | Player {trace.PlayerRule} | Final {trace.Final}";
+            $"[LazyLoot Item Test] :: Trace :: FULF {trace.BaseIntent} | UpTo {upTo} | Max {trace.MaxAllowed} | Custom {customText} | Player {trace.PlayerRule}{dutyText} | Final {trace.Final}";
         Svc.Chat.Print(summary);
 
         if (trace.Diagnostics.Count == 0)
@@ -538,6 +486,233 @@ public class LazyLoot : IDalamudPlugin, IDisposable
             foreach (var reason in trace.Diagnostics)
                 Svc.Chat.Print($"[LazyLoot Item Test] :: Reason :: {reason}");
         }
+
+        var dutyName = duty != null ? duty.Value.Name.ToString() : "None";
+        return new LazyTestResult(DateTime.Now, item.RowId, item.Name.ExtractText(), duty?.RowId, dutyName, upTo,
+            trace.Final);
+    }
+
+    private static bool TryParseLazyTestArgs(string arguments, out LazyTestRequest request, out string error)
+    {
+        request = default;
+        error = LazyTestUsage;
+
+        if (string.IsNullOrWhiteSpace(arguments))
+            return false;
+
+        if (!TryParseBracketArguments(arguments, out var args, out error))
+            return false;
+
+        var unknownKeys = args.Keys
+            .Where(key => !key.Equals("item", StringComparison.OrdinalIgnoreCase)
+                          && !key.Equals("duty", StringComparison.OrdinalIgnoreCase)
+                          && !key.Equals("upto", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (unknownKeys.Count > 0)
+        {
+            error = $"Unknown argument(s): {string.Join(", ", unknownKeys)}. {LazyTestUsage}";
+            return false;
+        }
+
+        if (!args.TryGetValue("item", out var itemQuery) || string.IsNullOrWhiteSpace(itemQuery))
+        {
+            error = $"Missing item argument. {LazyTestUsage}";
+            return false;
+        }
+
+        string? dutyQuery = null;
+        if (args.TryGetValue("duty", out var dutyValue))
+        {
+            if (string.IsNullOrWhiteSpace(dutyValue))
+            {
+                error = $"Duty value cannot be empty. {LazyTestUsage}";
+                return false;
+            }
+
+            dutyQuery = dutyValue;
+        }
+
+        var upTo = RollState.UpToNeed;
+        if (args.TryGetValue("upto", out var upToValue))
+        {
+            if (string.IsNullOrWhiteSpace(upToValue))
+            {
+                error = $"UpTo value cannot be empty. {LazyTestUsage}";
+                return false;
+            }
+
+            if (!TryParseUpToToken(upToValue, out upTo))
+            {
+                error = $"Invalid UpTo value: '{upToValue}'. Use need|greed|pass.";
+                return false;
+            }
+        }
+
+        request = new LazyTestRequest(itemQuery, dutyQuery, upTo);
+        return true;
+    }
+
+    private static bool TryResolveItem(string itemQuery, out Item item)
+    {
+        item = default;
+        var itemSheet = Svc.Data.GetExcelSheet<Item>();
+
+        if (uint.TryParse(itemQuery, out var itemId))
+        {
+            var itemRow = itemSheet.GetRowOrDefault(itemId);
+            if (itemRow == null || itemRow.Value.RowId == 0)
+            {
+                DuoLog.Debug($"No item found matching id '{itemId}'.");
+                return false;
+            }
+
+            item = itemRow.Value;
+            return true;
+        }
+
+        var search = itemQuery.Trim();
+        var matches = itemSheet
+            .Where(x => x.RowId > 0 && !x.Name.IsEmpty &&
+                        x.Name.ToString().Contains(search, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        switch (matches.Count)
+        {
+            case 0:
+                DuoLog.Debug($"No item found matching your search '{search}'.");
+                return false;
+            case > 1:
+            {
+                Svc.Chat.Print(new SeString(new List<Payload>
+                {
+                    new TextPayload(
+                        $"Found {matches.Count} entries for search '{search}'. Showing the first 5:")
+                }));
+
+                foreach (var match in matches.Take(5))
+                    Svc.Chat.Print(new SeString(new List<Payload>
+                        {
+                            new TextPayload($"[LazyLoot Item Test] :: ID {match.RowId} :: "),
+                            new UIForegroundPayload((ushort)(0x223 + match.Rarity * 2)),
+                            new UIGlowPayload((ushort)(0x224 + match.Rarity * 2)),
+                            new ItemPayload(match.RowId, false),
+                            new TextPayload(match.Name.ExtractText()),
+                            RawPayload.LinkTerminator,
+                            new UIForegroundPayload(0),
+                            new UIGlowPayload(0)
+                        })
+                    );
+
+                return false;
+            }
+            default:
+                item = matches[0];
+                return true;
+        }
+    }
+
+    private static bool TryParseBracketArguments(string input, out Dictionary<string, string> args, out string error)
+    {
+        args = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        error = string.Empty;
+
+        var i = 0;
+        while (i < input.Length)
+        {
+            while (i < input.Length && char.IsWhiteSpace(input[i]))
+                i++;
+
+            if (i >= input.Length)
+                break;
+
+            var keyStart = i;
+            while (i < input.Length && input[i] != ':' && !char.IsWhiteSpace(input[i]))
+                i++;
+
+            if (i >= input.Length || input[i] != ':')
+            {
+                error = $"Expected key:[value] format. {LazyTestUsage}";
+                return false;
+            }
+
+            var key = input.Substring(keyStart, i - keyStart).Trim();
+            if (key.Length == 0)
+            {
+                error = $"Missing argument name. {LazyTestUsage}";
+                return false;
+            }
+
+            i++; // skip ':'
+            while (i < input.Length && char.IsWhiteSpace(input[i]))
+                i++;
+
+            if (i >= input.Length || input[i] != '[')
+            {
+                error = $"Expected '[' after '{key}:'. {LazyTestUsage}";
+                return false;
+            }
+
+            i++; // skip '['
+            var valueBuilder = new StringBuilder();
+            var inQuotes = false;
+            var closed = false;
+
+            while (i < input.Length)
+            {
+                var c = input[i];
+                if (c == '\\' && i + 1 < input.Length && input[i + 1] == '"')
+                {
+                    valueBuilder.Append('"');
+                    i += 2;
+                    continue;
+                }
+
+                if (c == '"')
+                {
+                    inQuotes = !inQuotes;
+                    i++;
+                    continue;
+                }
+
+                if (c == ']' && !inQuotes)
+                {
+                    closed = true;
+                    i++;
+                    break;
+                }
+
+                valueBuilder.Append(c);
+                i++;
+            }
+
+            if (!closed)
+            {
+                error = $"Missing closing ']' for '{key}'. {LazyTestUsage}";
+                return false;
+            }
+
+            var value = valueBuilder.ToString().Trim();
+            if (value.Length == 0)
+            {
+                error = $"Empty value for '{key}'. {LazyTestUsage}";
+                return false;
+            }
+
+            if (!args.TryAdd(key, value))
+            {
+                error = $"Duplicate argument '{key}'. {LazyTestUsage}";
+                return false;
+            }
+        }
+
+        if (args.Count == 0)
+        {
+            error = LazyTestUsage;
+            return false;
+        }
+
+        return true;
     }
 
     private static bool TryParseUpToToken(string token, out RollState rollState)
@@ -560,5 +735,81 @@ public class LazyLoot : IDalamudPlugin, IDisposable
                 rollState = RollState.UpToNeed;
                 return false;
         }
+    }
+
+    private static ContentFinderCondition? ResolveDuty(string dutyQuery)
+    {
+        var dutySheet = Svc.Data.GetExcelSheet<ContentFinderCondition>();
+        if (uint.TryParse(dutyQuery, out var dutyId))
+        {
+            var duty = dutySheet.GetRowOrDefault(dutyId);
+            if (duty == null || duty.Value.RowId == 0)
+            {
+                DuoLog.Debug($"No duty found matching id '{dutyId}'.");
+                return null;
+            }
+
+            return duty.Value;
+        }
+
+        var search = dutyQuery.Trim();
+        var matches = dutySheet
+            .Where(x => x.RowId > 0 && !x.Name.IsEmpty &&
+                        x.Name.ToString().Contains(search, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        switch (matches.Count)
+        {
+            case 0:
+                DuoLog.Debug($"No duty found matching your search '{search}'.");
+                return null;
+            case > 1:
+            {
+                Svc.Chat.Print(
+                    $"Found {matches.Count} duties for search '{search}'. Showing the first 5:");
+                foreach (var match in matches.Take(5))
+                    Svc.Chat.Print($"[LazyLoot Duty Test] :: ID {match.RowId} :: {match.Name.ToString()}");
+                return null;
+            }
+            default:
+                return matches[0];
+        }
+    }
+
+    private readonly struct LazyTestRequest
+    {
+        public LazyTestRequest(string itemQuery, string? dutyQuery, RollState upTo)
+        {
+            ItemQuery = itemQuery;
+            DutyQuery = dutyQuery;
+            UpTo = upTo;
+        }
+
+        public string ItemQuery { get; }
+        public string? DutyQuery { get; }
+        public RollState UpTo { get; }
+    }
+
+    internal readonly struct LazyTestResult
+    {
+        public LazyTestResult(DateTime timestamp, uint itemId, string itemName, uint? dutyId, string dutyName,
+            RollState upTo, RollResult finalResult)
+        {
+            Timestamp = timestamp;
+            ItemId = itemId;
+            ItemName = itemName;
+            DutyId = dutyId;
+            DutyName = dutyName;
+            UpTo = upTo;
+            FinalResult = finalResult;
+        }
+
+        public DateTime Timestamp { get; }
+        public uint ItemId { get; }
+        public string ItemName { get; }
+        public uint? DutyId { get; }
+        public string DutyName { get; }
+        public RollState UpTo { get; }
+        public RollResult FinalResult { get; }
     }
 }
