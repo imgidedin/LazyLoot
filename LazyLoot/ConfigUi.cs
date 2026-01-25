@@ -124,6 +124,7 @@ public class ConfigUi : Window, IDisposable
     {
         ImGui.BeginChild("DebugList", new Vector2(0, 0), true);
         DrawDebugListItem("Is Item Unlocked?", DebugPanel.ItemUnlock);
+        DrawDebugListItem("Is Item Unlockable?", DebugPanel.ItemUnlockable);
         DrawDebugListItem("Lazy Test Item", DebugPanel.LazyTestItem);
         DrawDebugListItem("Faded Copies", DebugPanel.FadedCopies);
         DrawDebugListItem("Loot", DebugPanel.Loot);
@@ -143,6 +144,9 @@ public class ConfigUi : Window, IDisposable
         {
             case DebugPanel.ItemUnlock:
                 DrawDebugItemUnlock();
+                break;
+            case DebugPanel.ItemUnlockable:
+                DrawDebugItemUnlockable();
                 break;
             case DebugPanel.LazyTestItem:
                 DrawDebugLazyTestItem();
@@ -168,6 +172,16 @@ public class ConfigUi : Window, IDisposable
         ImGui.Separator();
         ImGui.InputInt("Debug Value Tester", ref _debugValue);
         ImGui.Text($"Is Unlocked: {Roller.IsItemUnlocked((uint)_debugValue)}");
+    }
+    
+    private static void DrawDebugItemUnlockable()
+    {
+        ImGui.TextUnformatted("Is Item Unlockable?");
+        ImGui.Separator();
+        ImGui.InputInt("Debug Value Tester", ref _debugValue);
+        var item = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault((uint)_debugValue);
+        var isUnlockable = item != null && Roller.IsUnlockableItem((Item)item);
+        ImGui.Text($"Is Unlockable: {isUnlockable}");
     }
 
     private void DrawDebugLazyTestItem()
@@ -1536,6 +1550,7 @@ public class ConfigUi : Window, IDisposable
     private enum DebugPanel
     {
         ItemUnlock,
+        ItemUnlockable,
         LazyTestItem,
         FadedCopies,
         Loot,

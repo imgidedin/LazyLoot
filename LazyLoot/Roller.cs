@@ -159,22 +159,18 @@ internal static class Roller
         return restriction && (!onlyUntradeable || (onlyUntradeable && item!.Value.IsUntradable));
     }
 
-    private static bool IsUnlockableItem(Item item, IReadOnlyCollection<uint> orchId)
+    internal static bool IsUnlockableItem(Item item)
     {
+        UpdateFadedCopy(item.RowId, out var orchId);
         return orchId.Count > 0 || LazyLoot.UnlockState.IsItemUnlockable(item);
     }
 
-    private static bool IsUnlockableUnlocked(uint itemId, IReadOnlyCollection<uint> orchId)
-    {
-        return orchId.Count > 0 ? orchId.All(IsItemUnlocked) : IsItemUnlocked(itemId);
-    }
-
-    private static RollResult GetUnlockablesOnlyResult(uint itemId, Item? lootItem, List<uint> orchId)
+    private static RollResult GetUnlockablesOnlyResult(uint itemId, Item? lootItem)
     {
         if (lootItem == null)
             return RollResult.Passed;
 
-        if (!IsUnlockableItem(lootItem.Value, orchId))
+        if (!IsUnlockableItem(lootItem.Value))
         {
             if (LazyLoot.Config.DiagnosticsMode)
                 DuoLog.Debug(
@@ -183,7 +179,7 @@ internal static class Roller
         }
 
         // Returns Needed to allow fulf to reduce it to whatever it is set to
-        if (!IsUnlockableUnlocked(itemId, orchId)) return RollResult.Needed;
+        if (!IsItemUnlocked(itemId)) return RollResult.Needed;
 
         if (LazyLoot.Config.DiagnosticsMode)
             DuoLog.Debug(
@@ -205,7 +201,7 @@ internal static class Roller
         }
 
         if (LazyLoot.Config.UnlockablesOnlyMode)
-            return GetUnlockablesOnlyResult(itemId, lootItem, orchId);
+            return GetUnlockablesOnlyResult(itemId, lootItem);
 
         if (lootItem.Value.IsUnique && ItemCount(itemId) > 0)
         {
@@ -426,8 +422,7 @@ internal static class Roller
     {
         if (item.RowId == 0)
             return false;
-        UpdateFadedCopy(item.RowId, out var orchId, false);
-        return IsUnlockableItem(item, orchId) && IsUnlockableUnlocked(item.RowId, orchId);
+        return IsUnlockableItem(item) && IsItemUnlocked(item.RowId);
     }
 
     private static RollResult ResultMerge(params RollResult[] results)
@@ -539,10 +534,12 @@ internal static class Roller
         return InventoryManager.Instance()->GetInventoryItemCount(itemId);
     }
 
-    public static unsafe bool IsItemUnlocked(uint itemId)
+    public static bool IsItemUnlocked(uint itemId)
     {
-        var exdItem = ExdModule.GetItemRowById(itemId);
-        return exdItem is null || UIState.Instance()->IsItemActionUnlocked(exdItem) is 1;
+        UpdateFadedCopy(itemId, out var orchId, false);
+        if (orchId.Count > 0) return orchId.All(IsItemUnlocked);
+        var item = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId);
+        return item != null && LazyLoot.UnlockState.IsItemUnlocked(item.Value);
     }
 
     public static uint ConvertSealsToIlvl(int sealAmnt)
