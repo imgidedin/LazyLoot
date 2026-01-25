@@ -1614,7 +1614,11 @@ public class ConfigUi : Window, IDisposable
         }
 
         ImGui.SameLine();
-        if (ImGui.Button("Export Preset", new Vector2(110f, 0f)))
+        const float exportButtonWidth = 110f;
+        var exportButtonAvail = ImGui.GetContentRegionAvail().X;
+        if (exportButtonAvail > exportButtonWidth)
+            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + exportButtonAvail - exportButtonWidth);
+        if (ImGui.Button("Export Preset", new Vector2(exportButtonWidth, 0f)))
         {
             var json = JsonSerializer.Serialize(new RestrictionPresetExport
             {
