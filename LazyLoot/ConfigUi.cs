@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -1177,17 +1179,43 @@ public class ConfigUi : Window, IDisposable
             return false;
 
         var bail = false;
-        foreach (var item in imported)
+        foreach (var item in imported.Where(item => sheet.All(x => x.RowId != item.Id)))
         {
-            if (sheet.Any(x => x.RowId == item.Id)) continue;
             bail = true;
             Notify.Error($"Imported restriction contains invalid {idLabel} ID: {item.Id}. Import cancelled.");
         }
 
-        if (bail)
-            return false;
+        return !bail;
+    }
 
-        return true;
+    private static string EncodePresetExport(string json)
+    {
+        using var buffer = new MemoryStream();
+        using (var gzip = new GZipStream(buffer, CompressionLevel.Optimal, true))
+        {
+            var bytes = Encoding.UTF8.GetBytes(json);
+            gzip.Write(bytes, 0, bytes.Length);
+        }
+
+        return Convert.ToBase64String(buffer.ToArray());
+    }
+
+    private static bool TryDecodePresetExport(string clipboardText, out string json)
+    {
+        json = string.Empty;
+        try
+        {
+            var compressed = Convert.FromBase64String(clipboardText);
+            using var input = new MemoryStream(compressed);
+            using var gzip = new GZipStream(input, CompressionMode.Decompress);
+            using var reader = new StreamReader(gzip, Encoding.UTF8);
+            json = reader.ReadToEnd();
+            return true;
+        }
+        catch (Exception e) when (e is FormatException or InvalidDataException or IOException)
+        {
+            return false;
+        }
     }
 
     private static void ImportPresetFromClipboard(List<RestrictionPreset> presets)
@@ -1199,12 +1227,7 @@ public class ConfigUi : Window, IDisposable
             return;
         }
 
-        string decodedPreset;
-        try
-        {
-            decodedPreset = Encoding.UTF8.GetString(Convert.FromBase64String(clipboardText));
-        }
-        catch (FormatException)
+        if (!TryDecodePresetExport(clipboardText, out var decodedPreset))
         {
             Notify.Error("Failed to import preset - invalid format");
             return;
@@ -1599,8 +1622,7 @@ public class ConfigUi : Window, IDisposable
                 Enabled = activePreset.Enabled,
                 Restrictions = activePreset.Restrictions
             });
-            var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
-            ImGui.SetClipboardText(encoded);
+            ImGui.SetClipboardText(EncodePresetExport(json));
             Notify.Success("Preset copied to clipboard!");
         }
 
