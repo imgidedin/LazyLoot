@@ -413,7 +413,7 @@ public class ConfigUi : Window, IDisposable
 
         var size = new Vector2(0, 350);
 
-        if (!ImGui.BeginTable("##chest_items_table_fdfsdhbijsdfjd", 2, flags, size)) return;
+        if (!ImGui.BeginTable("##chest_items_table", 2, flags, size)) return;
 
         ImGui.TableSetupColumn("Icon", ImGuiTableColumnFlags.WidthFixed, 32);
         ImGui.TableSetupColumn("Item");
