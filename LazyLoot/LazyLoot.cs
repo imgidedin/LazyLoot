@@ -13,6 +13,7 @@ using Dalamud.Plugin.Services;
 using ECommons;
 using ECommons.DalamudServices;
 using ECommons.Logging;
+using ECommons.Reflection;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using Lumina.Excel.Sheets;
 using PunishLib;
@@ -44,7 +45,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
 
     public LazyLoot(IDalamudPluginInterface pluginInterface)
     {
-        ECommonsMain.Init(pluginInterface, this);
+        ECommonsMain.Init(pluginInterface, this, Module.All);
         PunishLibMain.Init(pluginInterface, "LazyLoot", new AboutPlugin { Developer = "Gid, Taurenkey and NightmareXIV", Sponsor = "https://ko-fi.com/gidedin"});
 
         Config = Svc.PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
@@ -413,7 +414,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
     {
         if (string.IsNullOrWhiteSpace(idOrNameArg))
         {
-            DuoLog.Debug("Usage: /lazy test <Item ID or Item Name>");
+            DuoLog.Debug("Usage: /lazy test item <Item ID or Item Name>");
             return;
         }
 
@@ -445,7 +446,7 @@ public class LazyLoot : IDalamudPlugin, IDisposable
                                 new TextPayload($"[LazyLoot Item Test] :: ID {match.RowId} :: "),
                                 new UIForegroundPayload((ushort)(0x223 + match.Rarity * 2)),
                                 new UIGlowPayload((ushort)(0x224 + match.Rarity * 2)),
-                                new ItemPayload(match.RowId, true),
+                                new ItemPayload(match.RowId, false),
                                 new TextPayload(match.Name.ExtractText()),
                                 RawPayload.LinkTerminator,
                                 new UIForegroundPayload(0),

@@ -29,7 +29,7 @@
         <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
         <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
         <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-        <OutputPath>bin/Release</OutputPath>
+        <OutputPath>bin/compile</OutputPath>
         <NoWarn>CS1591</NoWarn>
     </PropertyGroup>
 
@@ -41,7 +41,7 @@
         <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
         <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
         <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-        <OutputPath>$(DalamudDevPlugins)</OutputPath>
+        <OutputPath>bin/compile</OutputPath>
         <NoWarn>CS1591</NoWarn>
     </PropertyGroup>
 

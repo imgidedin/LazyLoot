@@ -32,6 +32,8 @@ public class ConfigUi : Window, IDisposable
 {
     private static int _debugValue;
     private static int _fadedCopyItemId;
+    private static readonly List<FadedCopyDebugEntry> _debugFadedCopyEntries = [];
+    private static string _debugFadedCopyStatus = string.Empty;
 
     private static Dictionary<uint, HashSet<uint>>? _dutyChestItemMap;
 
@@ -60,31 +62,31 @@ public class ConfigUi : Window, IDisposable
 
     public override void Draw()
     {
-        if (ImGui.BeginTabBar("config"))
+        if (!ImGui.BeginTabBar("config")) return;
+        
+        if (ImGui.BeginTabItem("Features"))
         {
-            if (ImGui.BeginTabItem("Features"))
-            {
-                DrawFeatures();
-                ImGui.EndTabItem();
-            }
+            DrawFeatures();
+            ImGui.EndTabItem();
+        }
 
-            if (ImGui.BeginTabItem("Restrictions"))
-            {
-                DrawRestrictions();
-                ImGui.EndTabItem();
-            }
+        if (ImGui.BeginTabItem("Restrictions"))
+        {
+            DrawRestrictions();
+            ImGui.EndTabItem();
+        }
 
-            if (ImGui.BeginTabItem("About"))
-            {
-                AboutTab.Draw("LazyLoot");
-                ImGui.EndTabItem();
-            }
+        if (ImGui.BeginTabItem("About"))
+        {
+            AboutTab.Draw("LazyLoot");
+            ImGui.EndTabItem();
+        }
 
-            if (ImGui.BeginTabItem("Commands"))
-            {
-                DrawCommands();
-                ImGui.EndTabItem();
-            }
+        if (ImGui.BeginTabItem("Commands"))
+        {
+            DrawCommands();
+            ImGui.EndTabItem();
+        }
 
 #if DEBUG
             if (ImGui.BeginTabItem("Debug"))
@@ -94,8 +96,7 @@ public class ConfigUi : Window, IDisposable
             }
 #endif
 
-            ImGui.EndTabBar();
-        }
+        ImGui.EndTabBar();
     }
 
     private static IDalamudTextureWrap? GetItemIcon(uint id)
@@ -131,6 +132,7 @@ public class ConfigUi : Window, IDisposable
         DrawDebugListItem("Lazy Test Item", DebugPanel.LazyTestItem);
         DrawDebugListItem("Faded Copies", DebugPanel.FadedCopies);
         DrawDebugListItem("Loot", DebugPanel.Loot);
+        DrawDebugListItem("BisBuddy Reflection", DebugPanel.BisBuddyReflection);
         DrawDebugListItem("Duty Items", DebugPanel.DutyItems);
         ImGui.EndChild();
     }
@@ -163,12 +165,20 @@ public class ConfigUi : Window, IDisposable
             case DebugPanel.DutyItems:
                 DrawDebugDutyItems();
                 break;
+            case DebugPanel.BisBuddyReflection:
+                DrawDebugBisBuddyReflection();
+                break;
             default:
                 DrawDebugItemUnlock();
                 break;
         }
     }
-
+    
+    private static void DrawDebugBisBuddyReflection()
+    {
+        Integrations.BisBuddy.BisBuddy.ShowDebugInformation();
+    }
+    
     private static void DrawDebugItemUnlock()
     {
         ImGui.TextUnformatted("Is Item Unlocked?");
@@ -209,22 +219,141 @@ public class ConfigUi : Window, IDisposable
 
         ImGui.SetNextItemWidth(120f);
         ImGui.InputInt("Faded Copy Item ID", ref _fadedCopyItemId);
-        if (ImGui.Button("Faded Copy Converter Check?"))
+        ImGui.SameLine();
+        if (ImGui.Button("List Faded Copy"))
+            LoadFadedCopyEntry((uint)_fadedCopyItemId);
+
+        ImGui.SameLine();
+        if (ImGui.Button("List All Faded Copies"))
+            LoadAllFadedCopyEntries();
+
+        ImGui.SameLine();
+        if (ImGui.Button("Clear"))
         {
-            Roller.UpdateFadedCopy((uint)_fadedCopyItemId, out var orchIds);
-            Svc.Log.Debug(orchIds.Count == 0
-                ? $"No orchestrion rolls found for faded copy {_fadedCopyItemId}."
-                : $"Faded copy {_fadedCopyItemId} maps to orchestrion IDs: {string.Join(", ", orchIds)}");
+            _debugFadedCopyEntries.Clear();
+            _debugFadedCopyStatus = string.Empty;
         }
 
-        if (!ImGui.Button("Check all Faded Copies")) return;
+        if (!string.IsNullOrWhiteSpace(_debugFadedCopyStatus))
+            ImGui.TextUnformatted(_debugFadedCopyStatus);
+
+        DrawFadedCopyEntries();
+    }
+
+    private static void LoadFadedCopyEntry(uint itemId)
+    {
+        _debugFadedCopyEntries.Clear();
+
+        if (!TryGetFadedCopyItem(itemId, out var fadedCopy))
+        {
+            _debugFadedCopyStatus = $"Item {itemId} is not a faded copy.";
+            return;
+        }
+
+        var results = GetFadedCopyResults(fadedCopy.RowId);
+        _debugFadedCopyEntries.Add(new FadedCopyDebugEntry(fadedCopy, results));
+        _debugFadedCopyStatus = results.Count == 0
+            ? $"No orchestrion rolls found for faded copy {itemId}."
+            : $"Loaded 1 faded copy ({results.Count} roll(s)).";
+    }
+
+    private static void LoadAllFadedCopyEntries()
+    {
+        _debugFadedCopyEntries.Clear();
 
         foreach (var item in Svc.Data.GetExcelSheet<Item>()
                      .Where(x => x is { FilterGroup: 12, ItemUICategory.RowId: 94 }))
         {
-            Roller.UpdateFadedCopy(item.RowId, out _);
-            Svc.Log.Debug($"{item.Name}");
+            var results = GetFadedCopyResults(item.RowId);
+            _debugFadedCopyEntries.Add(new FadedCopyDebugEntry(item, results));
         }
+
+        _debugFadedCopyEntries.Sort((a, b) =>
+            string.Compare(a.FadedCopy.Name.ToString(), b.FadedCopy.Name.ToString(),
+                StringComparison.OrdinalIgnoreCase));
+        _debugFadedCopyStatus = $"Loaded {_debugFadedCopyEntries.Count} faded copies.";
+    }
+
+    private static bool TryGetFadedCopyItem(uint itemId, out Item fadedCopy)
+    {
+        fadedCopy = default;
+        var item = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId);
+        if (item is not { FilterGroup: 12, ItemUICategory.RowId: 94 })
+            return false;
+
+        fadedCopy = item.Value;
+        return true;
+    }
+
+    private static List<Item> GetFadedCopyResults(uint fadedCopyId)
+    {
+        var results = new List<Item>();
+        var seen = new HashSet<uint>();
+        var recipeSheet = Svc.Data.GetExcelSheet<Recipe>();
+
+        foreach (var recipe in recipeSheet.Where(recipe =>
+                     recipe.Ingredient.Any(ingredient => ingredient.RowId == fadedCopyId)))
+        {
+            var result = recipe.ItemResult.Value;
+            if (result.RowId == 0 || !seen.Add(result.RowId))
+                continue;
+
+            results.Add(result);
+        }
+
+        results.Sort((a, b) =>
+            string.Compare(a.Name.ToString(), b.Name.ToString(), StringComparison.OrdinalIgnoreCase));
+        return results;
+    }
+
+    private static void DrawFadedCopyEntries()
+    {
+        if (_debugFadedCopyEntries.Count == 0)
+        {
+            ImGui.TextUnformatted("No faded copies loaded.");
+            return;
+        }
+
+        var listHeight = MathF.Max(160f, ImGui.GetContentRegionAvail().Y);
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(6, 2));
+        ImGui.BeginChild("##faded_copy_list", new Vector2(0, listHeight), true);
+
+        foreach (var entry in _debugFadedCopyEntries)
+        {
+            ImGui.PushID((int)entry.FadedCopy.RowId);
+
+            var icon = GetItemIcon(entry.FadedCopy.Icon);
+            if (icon != null)
+            {
+                ImGui.Image(icon.Handle, new Vector2(16, 16));
+                ImGui.SameLine();
+            }
+            else
+            {
+                ImGui.Dummy(new Vector2(16, 16));
+                ImGui.SameLine();
+            }
+
+            ImGui.TextUnformatted(entry.FadedCopy.Name.ToString());
+
+            ImGui.Indent();
+            if (entry.Results.Count == 0)
+            {
+                ImGui.TextUnformatted("|--- (no orchestrion rolls)");
+            }
+            else
+            {
+                foreach (var result in entry.Results)
+                    ImGui.TextUnformatted($"|--- {result.Name}");
+            }
+
+            ImGui.Unindent();
+            ImGui.Dummy(new Vector2(0, 2));
+            ImGui.PopID();
+        }
+
+        ImGui.EndChild();
+        ImGui.PopStyleVar();
     }
 
     private static unsafe void DrawDebugLoot()
@@ -1703,6 +1832,7 @@ public class ConfigUi : Window, IDisposable
         LazyTestItem,
         FadedCopies,
         Loot,
+        BisBuddyReflection,
         DutyItems
     }
 
@@ -1724,6 +1854,18 @@ public class ConfigUi : Window, IDisposable
         [FieldOffset(0x30)] public float MaxTime;
 
         [FieldOffset(0x38)] public LootMode LootMode;
+    }
+
+    private sealed class FadedCopyDebugEntry
+    {
+        public FadedCopyDebugEntry(Item fadedCopy, List<Item> results)
+        {
+            FadedCopy = fadedCopy;
+            Results = results;
+        }
+
+        public Item FadedCopy { get; }
+        public List<Item> Results { get; }
     }
 
     private sealed class RestrictionPresetExport
