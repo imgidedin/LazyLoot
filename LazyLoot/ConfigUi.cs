@@ -1014,11 +1014,13 @@ public class ConfigUi : Window, IDisposable
                                 ImGui.Image(obtainedIcon.Handle, iconSize);
                                 ImGui.SameLine();
                             }
+
                             ImGui.TextUnformatted("Already Unlocked");
                         }
 
                         ImGui.EndTooltip();
                     }
+
                     TrySendItemLinkOnRightClick(restrictedItem);
 
                     ImGui.TableNextColumn();
@@ -1554,8 +1556,17 @@ public class ConfigUi : Window, IDisposable
             }
             else
             {
-                presets.RemoveAll(p => p.Id == activePreset.Id);
-                LazyLoot.Config.EnsureActiveRestrictionPreset();
+                var removeIndex = presets.FindIndex(p => p.Id == activePreset.Id);
+                if (removeIndex >= 0)
+                {
+                    var nextIndex = removeIndex < presets.Count - 1 ? removeIndex : removeIndex - 1;
+                    presets.RemoveAt(removeIndex);
+                    LazyLoot.Config.ActiveRestrictionPresetId = presets[nextIndex].Id;
+                }
+                else
+                {
+                    LazyLoot.Config.EnsureActiveRestrictionPreset();
+                }
             }
 
             LazyLoot.Config.Save();
